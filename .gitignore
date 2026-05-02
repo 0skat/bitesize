@@ -1,0 +1,8 @@
+.worktrees/
+.venv/
+__pycache__/
+output/
+*.epub
+.env
+token.json
+credentials.json
