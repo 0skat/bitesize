@@ -6,6 +6,15 @@ from rich.panel import Panel
 from config import console
 
 
+def all_sources(config: dict) -> dict[str, dict[str, str]]:
+    """Return every configured RSS source under each category (used by ``--all``)."""
+    out: dict[str, dict[str, str]] = {}
+    for cat, feeds in config.get("categories", {}).items():
+        if isinstance(feeds, dict) and feeds:
+            out[cat] = dict(feeds)
+    return out
+
+
 def select_sources(config: dict) -> dict[str, dict[str, str]]:
     """Present checkbox prompts; return {category: {name: url}} for chosen sources."""
     all_cats = list(config["categories"].keys())

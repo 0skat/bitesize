@@ -29,7 +29,7 @@ def call(instruction: str, stdin_data: str, label: str = "") -> Optional[str]:
     tag = f"[{label}] " if label else ""
     try:
         result = subprocess.run(
-            ["gemini", "--output-format", "json", instruction],
+            ["gemini", "--output-format", "json", "-p", instruction],
             input=stdin_data,
             capture_output=True,
             text=True,

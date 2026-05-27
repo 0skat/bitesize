@@ -2,7 +2,7 @@ import json
 import re
 from typing import Optional
 
-from config import console, GEMINI_BATCH_SIZE, TRUNCATE_CHARS
+from config import console, GEMINI_BATCH_SIZE, MIN_BODY_CHARS, TRUNCATE_CHARS
 from ai import call as _call_ai, available as _ai_available
 
 
@@ -29,6 +29,37 @@ def _extract_json(response: str, label: str = ""):
     return None
 
 
+def article_relevance(art: dict) -> int:
+    """Return 0–100 score for sorting; missing values use heuristic fallback."""
+    if "relevance" in art and art["relevance"] is not None:
+        return _normalize_relevance(art["relevance"])
+    return _fallback_relevance(art)
+
+
+def _normalize_relevance(raw) -> int:
+    """Coerce model output to 0–100 for sorting and EPUB display."""
+    try:
+        v = int(round(float(raw)))
+    except (TypeError, ValueError):
+        return 50
+    return max(0, min(100, v))
+
+
+def _fallback_relevance(art: dict) -> int:
+    """When the model omits a score, prefer longer readable extracts."""
+    body = (art.get("content") or "").strip()
+    n = len(body)
+    if n >= 3500:
+        return 78
+    if n >= 2000:
+        return 70
+    if n >= MIN_BODY_CHARS:
+        return 62
+    if n > 120:
+        return 48
+    return 40
+
+
 def process_articles(articles: list[dict], batch_size: int = GEMINI_BATCH_SIZE) -> list[dict]:
     """
     Single flat pass over all articles.
@@ -36,13 +67,19 @@ def process_articles(articles: list[dict], batch_size: int = GEMINI_BATCH_SIZE) 
     Each batch of `batch_size` articles is sent in ONE call that simultaneously:
       • Filters out ads / sponsored content  (skip=true)  → logged to console
       • Writes a 2-sentence factual summary   (summary="…")
+      • Assigns relevance (0–100) for ranking the digest
 
     Falls back gracefully: if Gemini is unavailable or a batch fails,
     the original articles are kept without summaries.
     """
     if not _ai_available():
         console.print("  [yellow]⚠  AI backend not available — skipping AI processing[/yellow]")
-        return articles
+        out = []
+        for art in articles:
+            a = art.copy()
+            a["relevance"] = _fallback_relevance(a)
+            out.append(a)
+        return out
 
     processed: list[dict] = []
 
@@ -59,10 +96,13 @@ def process_articles(articles: list[dict], batch_size: int = GEMINI_BATCH_SIZE) 
         instruction = (
             f"You are a news editor reviewing {len(batch)} article snippets. "
             "Return ONLY a raw JSON array — no markdown fences, no explanation — with one object per article: "
-            '[{"id":0,"skip":false,"summary":"Sentence one. Sentence two."}] '
+            '[{"id":0,"skip":false,"summary":"Sentence one. Sentence two.","relevance":72}] '
             "Rules: skip=true ONLY for pure advertisements or sponsored/promotional content; "
             "real news is never skipped regardless of topic. "
-            "summary: exactly 2 factual sentences, no editorialising, no filler phrases."
+            "summary: exactly 2 factual sentences, no editorialising, no filler phrases. "
+            "relevance: integer 0–100 for how important this story is to a well-informed reader today "
+            "(consider impact, timeliness, breadth of audience, and how central the topic is vs niche); "
+            "use the full scale — not every item should be 80+."
         )
 
         response = _call_ai(instruction, article_block)
@@ -83,11 +123,19 @@ def process_articles(articles: list[dict], batch_size: int = GEMINI_BATCH_SIZE) 
                     else:
                         art = batch[idx].copy()
                         art["summary"] = item.get("summary", "")
+                        if "relevance" in item:
+                            art["relevance"] = _normalize_relevance(item.get("relevance"))
+                        else:
+                            art["relevance"] = _fallback_relevance(art)
                         processed.append(art)
                 continue  # batch handled
 
-        # Fallback: keep all articles without summaries
-        processed.extend(batch)
+        # Fallback: keep all articles without summaries (score heuristically for ordering)
+        for art in batch:
+            a = art.copy()
+            if "relevance" not in a:
+                a["relevance"] = _fallback_relevance(a)
+            processed.append(a)
 
     return processed
 

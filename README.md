@@ -90,14 +90,33 @@ Skip delivery with `--no-kindle`.
 # Interactive — pick categories and sources
 python main.py
 
-# Non-interactive — all RSS sources
-python main.py --all --no-kindle
+# Non-interactive — all RSS sources, build EPUB and email Kindle
+python main.py --all
 
-# EPUB only, no email
-python main.py --no-kindle
+# EPUB only (no SMTP)
+python main.py --all --no-kindle
 ```
 
 Output lands in `./output/News Digest - <date>.epub`.
+
+### Relevance scores
+
+Each article receives a **0–100 relevance** score from the AI (or a simple fallback from article length when the model omits a score). The EPUB **sorts each section highest-first**, prints the score under the “Summary” heading on article pages, shows it on section index cards, and adds a **“Top stories by relevance”** block on the digest front page so the most important items are easy to find.
+
+### Daily run at 7:00 AM (macOS)
+
+On your Mac, install a LaunchAgent (runs in your GUI session; the machine must be awake and logged in at 7:00):
+
+```bash
+./scripts/install-daily-launchd.sh
+```
+
+This writes `~/Library/LaunchAgents/com.bitesize.digest.plist`, runs `.venv/bin/python main.py --all` every day at **07:00** local time, and appends logs to `output/logs/digest-stdout.log` and `digest-stderr.log`. Uninstall:
+
+```bash
+launchctl unload ~/Library/LaunchAgents/com.bitesize.digest.plist
+rm ~/Library/LaunchAgents/com.bitesize.digest.plist
+```
 
 ### Previewing on a real Kindle layout
 

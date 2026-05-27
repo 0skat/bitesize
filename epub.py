@@ -5,7 +5,8 @@ from pathlib import Path
 
 from ebooklib import epub
 
-from config import INDEX_ENTRIES_PER_PAGE, MIN_BODY_CHARS, OUTPUT_DIR
+from config import INDEX_ENTRIES_PER_PAGE, MIN_BODY_CHARS, OUTPUT_DIR, TOP_PICKS_ON_COVER
+from gemini import article_relevance
 
 _CSS = """
 /* Kindle-friendly typography — all sizes in em so the device font slider works */
@@ -220,6 +221,62 @@ a.index-entry-link .index-meta { color: #777; }
   color: #888;
   margin: 0 0 0.35em 0;
 }
+.summary-meta-line {
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 0.72em;
+  color: #666;
+  margin: 0 0 0.55em 0;
+  letter-spacing: 0.02em;
+}
+.index-relevance {
+  font-size: 0.68em;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  color: #1b6b4d;
+  margin: 0 0 0.35em 0;
+  letter-spacing: 0.03em;
+}
+.top-picks { margin: 0.15em 0 0.85em 0; }
+.top-picks-heading {
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 0.72em;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #666;
+  margin: 0 0 0.55em 0;
+}
+a.top-pick-card {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  padding: 0.55em 0 0.75em 0;
+  border-top: 0.06em solid #ccc;
+}
+a.top-pick-card:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+.top-pick-meta {
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 0.68em;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #777;
+  margin: 0 0 0.25em 0;
+}
+.top-pick-title {
+  font-size: 1.02em;
+  font-weight: bold;
+  line-height: 1.25;
+  margin: 0 0 0.3em 0;
+  text-align: left;
+}
+.top-pick-blurb {
+  font-size: 0.88em;
+  color: #555;
+  line-height: 1.45;
+  margin: 0;
+  text-align: left;
+}
 .article-body {
   font-size: 1em;
   color: #1a1a1a;
@@ -372,6 +429,57 @@ def _cover_highlight_xhtml(h: dict) -> str:
     return "".join(parts)
 
 
+def _article_href(category: str, art: dict, sections: dict[str, list]) -> str | None:
+    """Return spine filename for an article (must match generate_epub ordering)."""
+    arts = sections.get(category) or []
+    slug = _slugify(category)
+    url = (art.get("url") or "").strip()
+    title = (art.get("title") or "").strip()
+    for i, a in enumerate(arts, start=1):
+        if url and (a.get("url") or "").strip() == url:
+            return f"article_{slug}_{i:02d}.xhtml"
+        if not url and title and (a.get("title") or "").strip() == title:
+            return f"article_{slug}_{i:02d}.xhtml"
+    return None
+
+
+def _top_picks_xhtml(sections: dict[str, list], limit: int) -> str:
+    """Digest front page: highest-scoring items across all sections with deep links."""
+    ranked: list[tuple[int, str, dict]] = []
+    for cat, arts in sections.items():
+        for a in arts or []:
+            ranked.append((article_relevance(a), cat, a))
+    ranked.sort(
+        key=lambda x: (-x[0], (x[1] or "").lower(), (x[2].get("title") or "").lower()),
+    )
+    picks = ranked[:limit]
+    if not picks:
+        return ""
+    parts: list[str] = [
+        '<section class="top-picks">',
+        '<h2 class="top-picks-heading">Top stories by relevance</h2>',
+    ]
+    for score, cat, art in picks:
+        href = _article_href(cat, art, sections)
+        if not href:
+            continue
+        blurb = _article_blurb(art)
+        if not blurb:
+            blurb = (art.get("summary") or art.get("title") or "").strip()
+        blurb = _truncate(blurb, 160)
+        parts.append(
+            f'<a class="top-pick-card" href="{_e(href)}">'
+            f'<div>'
+            f'<p class="top-pick-meta">{_e(cat)} &middot; score {score}/100</p>'
+            f'<h3 class="top-pick-title">{_e(art.get("title", ""))}</h3>'
+            f'<p class="top-pick-blurb">{_e(blurb)}</p>'
+            f"</div>"
+            f"</a>"
+        )
+    parts.append("</section>")
+    return "".join(parts)
+
+
 def _body_paragraphs(text: str, drop_cap: bool = True) -> str:
     """Convert plain-text article body to XHTML paragraphs."""
     paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
@@ -390,9 +498,11 @@ def _article_body_html(art: dict) -> str:
     parts: list[str] = []
 
     if summary:
+        rel = article_relevance(art)
         parts.append(
             f'<div class="summary">'
             f'<p class="summary-label">Summary</p>'
+            f'<p class="summary-meta-line">Relevance score: {rel}/100</p>'
             f"<p>{_e(summary)}</p>"
             f"</div>"
         )
@@ -408,6 +518,7 @@ def _article_body_html(art: dict) -> str:
 def _global_cover_xhtml(cover_data: dict, sections: dict[str, list], now: datetime) -> bytes:
     total = sum(len(v) for v in sections.values())
     date_str = now.strftime("%A, %B %d, %Y")
+    top_picks_html = _top_picks_xhtml(sections, TOP_PICKS_ON_COVER)
 
     if not cover_data:
         cover_data = _fallback_global_cover(sections)
@@ -425,6 +536,7 @@ def _global_cover_xhtml(cover_data: dict, sections: dict[str, list], now: dateti
             f'<h1 class="article-title">{headline}</h1>'
             f'<p class="cover-lead">{editorial}</p>'
             f"</header>"
+            f"{top_picks_html}"
             f'<hr class="cover-rule" />'
             f'<div class="cover-highlights">{highlights_html}</div>'
         )
@@ -440,6 +552,7 @@ def _global_cover_xhtml(cover_data: dict, sections: dict[str, list], now: dateti
             f'<h1 class="article-title">News Digest</h1>'
             f'<p class="cover-lead">Your sections for this edition.</p>'
             f"</header>"
+            f"{top_picks_html}"
             f'<hr class="cover-rule" />'
             f'<div class="c-stats cover-stats">{stats}</div>'
         )
@@ -497,10 +610,13 @@ def _section_index_entries_html(
         pub_tag = f" &middot; {art['published']}" if art.get("published") else ""
         blurb = _article_blurb(art)
         blurb_tag = f'<p class="index-blurb">{_e(blurb)}</p>' if blurb else ""
+        score = article_relevance(art)
+        score_line = f'<p class="index-relevance">Relevance {score}/100</p>'
         entries.append(
             f'<a class="index-entry-link" href="article_{art_slug}.xhtml">'
             f'<div class="index-entry">'
             f'<p class="index-num">Story {story_num}</p>'
+            f"{score_line}"
             f'<h2 class="index-title">{_e(art["title"])}</h2>'
             f'<p class="index-meta">{_e(art["source"])}{pub_tag}</p>'
             f"{blurb_tag}"
@@ -523,7 +639,10 @@ def _section_index_page_xhtml(
 ) -> bytes:
     end_num = start_num + len(page_articles) - 1
     if total_pages == 1:
-        intro = f"{total} stories in this section. Tap a card to open the full article."
+        intro = (
+            f"{total} stories in this section, highest relevance first. "
+            "Tap a card to open the full article."
+        )
     else:
         intro = (
             f"Stories {start_num}–{end_num} of {total} in {category}. "

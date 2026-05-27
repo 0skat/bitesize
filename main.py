@@ -21,7 +21,7 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn
 
 from config import console, load_env, SOURCES_FILE, OUTPUT_DIR
 from feed import fetch_feed, fetch_article_content, filter_headline_only
-from gemini import process_articles, generate_section_cover, generate_global_cover
+from gemini import process_articles, generate_section_cover, generate_global_cover, article_relevance
 from epub import generate_epub
 from kindle import send_to_kindle
 from ui import all_sources, select_sources
@@ -45,6 +45,11 @@ def main() -> None:
         "--all",
         action="store_true",
         help="Include all categories and sources without prompting",
+    )
+    parser.add_argument(
+        "--no-kindle",
+        action="store_true",
+        help="Write EPUB only; skip SMTP delivery to Kindle",
     )
     args = parser.parse_args()
 
@@ -147,6 +152,12 @@ def main() -> None:
         if cat in processed_sections:
             processed_sections[cat].append(art)
 
+    # Highest relevance first within each section (Kindle spine + indexes follow this order).
+    for cat in processed_sections:
+        processed_sections[cat].sort(
+            key=lambda a: (-article_relevance(a), (a.get("title") or "").lower()),
+        )
+
     total_filtered = total_raw - len(kept_flat)
     console.print(
         f"  [green]✓[/green]  [bold]{len(kept_flat)}[/bold] articles kept"
@@ -191,8 +202,11 @@ def main() -> None:
     console.print(f"   [dim]{out_path}[/dim]\n")
 
     # ── 7. Send to Kindle ─────────────────────────────────────────────────────
-    console.print("[cyan]📬  Sending to Kindle…[/cyan]")
-    send_to_kindle(out_path)
+    if args.no_kindle:
+        console.print("[dim]  Skipped Kindle delivery (--no-kindle).[/dim]")
+    else:
+        console.print("[cyan]📬  Sending to Kindle…[/cyan]")
+        send_to_kindle(out_path)
 
 
 if __name__ == "__main__":
