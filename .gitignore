@@ -6,3 +6,12 @@ output/
 .env
 token.json
 credentials.json
+
+node_modules/
+wordflow/node_modules/
+wordflow/.next/
+.DS_Store
+**/.DS_Store
+.claude/
+wordflow/.env.local
+.cursor-worker.log

@@ -1,0 +1,28 @@
+{
+  "categories": {
+    "Brazil": {
+      "G1 - Globo":       "https://g1.globo.com/dynamo/rss2.xml",
+      "Folha de S.Paulo": "https://feeds.folha.uol.com.br/emcimadahora/rss091.xml",
+      "Agência Brasil":   "https://agenciabrasil.ebc.com.br/rss/ultimasnoticias/feed.xml",
+      "UOL Notícias":     "https://rss.uol.com.br/feed/noticias.xml"
+    },
+    "Tech": {
+      "The Verge":     "https://www.theverge.com/rss/index.xml",
+      "Ars Technica":  "http://feeds.arstechnica.com/arstechnica/index",
+      "Wired":         "https://www.wired.com/feed/rss",
+      "TechCrunch":    "https://techcrunch.com/feed/",
+      "Hacker News":   "https://hnrss.org/frontpage",
+      "Engadget":      "https://www.engadget.com/rss.xml"
+    },
+    "World": {
+      "BBC World":   "http://feeds.bbci.co.uk/news/world/rss.xml",
+      "Al Jazeera":  "https://www.aljazeera.com/xml/rss/all.xml",
+      "AP News":     "https://apnews.com/hub/apf-topnews?format=rss",
+      "NPR News":    "https://feeds.npr.org/1001/rss.xml"
+    }
+  },
+  "integrations": {
+    "gmail":           false,
+    "google_calendar": false
+  }
+}
