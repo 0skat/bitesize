@@ -5,7 +5,7 @@ import urllib.error
 import urllib.request
 from typing import Optional
 
-from config import console, GEMINI_CHECK_TIMEOUT, OLLAMA_HOST, OLLAMA_MODEL, OLLAMA_TIMEOUT
+from config import console, get_settings
 
 _SYSTEM_PREFIX = (
     "You are a JSON-only assistant. You NEVER output prose, markdown, or explanation.\n"
@@ -17,8 +17,9 @@ _SYSTEM_PREFIX = (
 def available() -> bool:
     """Return True if Ollama is running and reachable."""
     try:
-        url = f"http://{OLLAMA_HOST}/api/tags"
-        urllib.request.urlopen(url, timeout=GEMINI_CHECK_TIMEOUT)
+        s = get_settings()
+        url = f"http://{s.ollama_host}/api/tags"
+        urllib.request.urlopen(url, timeout=s.gemini_check_timeout)
         return True
     except Exception:
         return False
@@ -27,14 +28,15 @@ def available() -> bool:
 def call(instruction: str, stdin_data: str, label: str = "") -> Optional[str]:
     """Call Ollama and return the model's response string, or None on failure."""
     tag = f"[{label}] " if label else ""
+    s = get_settings()
     payload = json.dumps({
-        "model": OLLAMA_MODEL,
+        "model": s.ollama_model,
         "prompt": f"{_SYSTEM_PREFIX}\n\n{instruction}\n\n{stdin_data}",
         "stream": False,
     }).encode("utf-8")
 
     req = urllib.request.Request(
-        f"http://{OLLAMA_HOST}/api/generate",
+        f"http://{s.ollama_host}/api/generate",
         data=payload,
         headers={"Content-Type": "application/json"},
         method="POST",
@@ -42,7 +44,7 @@ def call(instruction: str, stdin_data: str, label: str = "") -> Optional[str]:
 
     for attempt in range(2):
         try:
-            with urllib.request.urlopen(req, timeout=OLLAMA_TIMEOUT) as resp:
+            with urllib.request.urlopen(req, timeout=s.ollama_timeout) as resp:
                 body = resp.read().decode("utf-8")
             data = json.loads(body)
             return data.get("response", "")
