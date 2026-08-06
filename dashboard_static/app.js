@@ -1,0 +1,283 @@
+const GROUP_LABELS = {
+  ai: "AI",
+  feed: "Feed fetching",
+  filter: "Article filters",
+  epub: "EPUB layout",
+  integrations: "Integrations",
+  cli: "CLI defaults",
+  kindle: "Kindle delivery",
+};
+
+const BOOL_KEYS = new Set([
+  "kindle_delivery_enabled",
+  "integration_gmail",
+  "integration_google_calendar",
+  "cli_select_all_sources",
+]);
+
+const KINDLE_KEYS = [
+  "kindle_email",
+  "smtp_user",
+  "smtp_password",
+  "smtp_host",
+  "smtp_port",
+  "kindle_delivery_enabled",
+];
+
+let settingsData = {};
+
+function $(sel) { return document.querySelector(sel); }
+function $$(sel) { return [...document.querySelectorAll(sel)]; }
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, {
+    headers: { "Content-Type": "application/json" },
+    ...opts,
+  });
+  const data = r.headers.get("content-type")?.includes("json")
+    ? await r.json()
+    : null;
+  if (!r.ok) throw new Error(data?.error || data?.message || r.statusText);
+  return data;
+}
+
+function setStatus(el, msg, ok) {
+  el.textContent = msg || "";
+  el.className = "status" + (msg ? (ok ? " ok" : " err") : "");
+}
+
+function inputForKey(key, value) {
+  if (BOOL_KEYS.has(key)) {
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = !!value;
+    cb.dataset.key = key;
+    return cb;
+  }
+  const input = document.createElement("input");
+  input.type = key.includes("password") ? "password"
+    : key.includes("email") ? "email"
+    : typeof value === "number" ? "number"
+    : "text";
+  input.value = value ?? "";
+  input.dataset.key = key;
+  return input;
+}
+
+function renderSettingsGroups() {
+  const root = $("#settings-groups");
+  root.innerHTML = "";
+  for (const [group, fields] of Object.entries(settingsData)) {
+    if (group === "kindle") continue;
+    const card = document.createElement("div");
+    card.className = "group";
+    const title = document.createElement("h2");
+    title.textContent = GROUP_LABELS[group] || group;
+    card.appendChild(title);
+    for (const [key, value] of Object.entries(fields)) {
+      const row = document.createElement("div");
+      row.className = "field";
+      const label = document.createElement("label");
+      label.textContent = key.replace(/_/g, " ");
+      label.htmlFor = key;
+      const input = inputForKey(key, value);
+      input.id = key;
+      row.append(label, input);
+      card.appendChild(row);
+    }
+    root.appendChild(card);
+  }
+}
+
+function renderKindleFields() {
+  const root = $("#kindle-fields");
+  root.innerHTML = "";
+  const fields = settingsData.kindle || {};
+  for (const key of KINDLE_KEYS) {
+    if (key === "smtp_password_set") continue;
+    const row = document.createElement("div");
+    row.className = "field";
+    const label = document.createElement("label");
+    label.textContent = key.replace(/_/g, " ");
+    const input = inputForKey(key, fields[key]);
+    if (key === "smtp_password" && fields.smtp_password_set && !fields[key]) {
+      input.placeholder = "•••••••• (unchanged)";
+    }
+    input.dataset.kindle = "1";
+    row.append(label, input);
+    root.appendChild(row);
+  }
+}
+
+function collectInputs(container) {
+  const out = {};
+  container.querySelectorAll("[data-key]").forEach((el) => {
+    const key = el.dataset.key;
+    if (key === "smtp_password" && !el.value.trim()) {
+      return;
+    }
+    out[key] = el.type === "checkbox" ? el.checked : el.value;
+  });
+  return out;
+}
+
+async function loadSettings() {
+  settingsData = await api("/api/settings");
+  renderSettingsGroups();
+  renderKindleFields();
+}
+
+async function saveSettings(container, statusEl) {
+  try {
+    const updates = collectInputs(container);
+    settingsData = await api("/api/settings", {
+      method: "PUT",
+      body: JSON.stringify(updates),
+    });
+    setStatus(statusEl, "Saved.", true);
+    renderKindleFields();
+  } catch (e) {
+    setStatus(statusEl, e.message, false);
+  }
+}
+
+function renderSources(data) {
+  const root = $("#sources-list");
+  root.innerHTML = "";
+  for (const cat of data.categories) {
+    const card = document.createElement("div");
+    card.className = "card";
+    const header = document.createElement("div");
+    header.className = "category-header";
+    const nameInput = document.createElement("input");
+    nameInput.type = "text";
+    nameInput.value = cat.name;
+    const saveCat = document.createElement("button");
+    saveCat.textContent = "Rename";
+    saveCat.onclick = async () => {
+      await api(`/api/categories/${cat.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ name: nameInput.value.trim() }),
+      });
+      await refreshSources();
+    };
+    const delCat = document.createElement("button");
+    delCat.textContent = "Delete";
+    delCat.className = "danger";
+    delCat.onclick = async () => {
+      if (!confirm(`Delete category "${cat.name}" and all feeds?`)) return;
+      await api(`/api/categories/${cat.id}`, { method: "DELETE" });
+      await refreshSources();
+    };
+    header.append(nameInput, saveCat, delCat);
+    card.appendChild(header);
+
+    for (const feed of cat.feeds) {
+      const row = document.createElement("div");
+      row.className = "feed-row";
+      const name = document.createElement("input");
+      name.type = "text";
+      name.value = feed.name;
+      const url = document.createElement("input");
+      url.type = "text";
+      url.value = feed.url;
+      const enabled = document.createElement("input");
+      enabled.type = "checkbox";
+      enabled.checked = feed.enabled;
+      enabled.title = "Enabled";
+      const save = document.createElement("button");
+      save.textContent = "Save";
+      save.onclick = async () => {
+        await api(`/api/feeds/${feed.id}`, {
+          method: "PUT",
+          body: JSON.stringify({
+            name: name.value.trim(),
+            url: url.value.trim(),
+            enabled: enabled.checked,
+          }),
+        });
+        setStatus($("#sources-status"), "Feed saved.", true);
+      };
+      const del = document.createElement("button");
+      del.textContent = "Delete";
+      del.className = "danger";
+      del.onclick = async () => {
+        await api(`/api/feeds/${feed.id}`, { method: "DELETE" });
+        await refreshSources();
+      };
+      row.append(name, url, enabled, save, del);
+      card.appendChild(row);
+    }
+
+    const addRow = document.createElement("div");
+    addRow.className = "feed-add";
+    const newName = document.createElement("input");
+    newName.placeholder = "Feed name";
+    const newUrl = document.createElement("input");
+    newUrl.placeholder = "RSS URL";
+    const addBtn = document.createElement("button");
+    addBtn.textContent = "Add feed";
+    addBtn.onclick = async () => {
+      await api("/api/feeds", {
+        method: "POST",
+        body: JSON.stringify({
+          category_id: cat.id,
+          name: newName.value.trim(),
+          url: newUrl.value.trim(),
+        }),
+      });
+      newName.value = "";
+      newUrl.value = "";
+      await refreshSources();
+    };
+    addRow.append(newName, newUrl, addBtn);
+    card.appendChild(addRow);
+    root.appendChild(card);
+  }
+}
+
+async function refreshSources() {
+  const data = await api("/api/sources");
+  renderSources(data);
+}
+
+$$(".tab").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    $$(".tab").forEach((b) => b.classList.remove("active"));
+    $$(".panel").forEach((p) => p.classList.remove("active"));
+    btn.classList.add("active");
+    $(`#panel-${btn.dataset.tab}`).classList.add("active");
+  });
+});
+
+$("#save-settings").onclick = () =>
+  saveSettings($("#panel-settings"), $("#settings-status"));
+
+$("#save-kindle").onclick = () =>
+  saveSettings($("#kindle-fields"), $("#kindle-status"));
+
+$("#test-kindle").onclick = async () => {
+  const status = $("#kindle-status");
+  try {
+    await saveSettings($("#kindle-fields"), status);
+    const res = await api("/api/kindle/test", { method: "POST" });
+    setStatus(status, res.message, res.ok);
+  } catch (e) {
+    setStatus(status, e.message, false);
+  }
+};
+
+$("#add-category").onclick = async () => {
+  const name = $("#new-category-name").value.trim();
+  if (!name) return;
+  await api("/api/categories", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+  $("#new-category-name").value = "";
+  await refreshSources();
+};
+
+loadSettings().then(refreshSources).catch((e) => {
+  setStatus($("#settings-status"), e.message, false);
+});
