@@ -8,8 +8,10 @@ from pathlib import Path
 from flask import Flask, jsonify, request, send_from_directory
 
 import settings_store as store
-from config import reload_settings
+from config import load_env, reload_settings
 from kindle import send_test_email
+
+load_env()
 
 STATIC_DIR = Path(__file__).parent / "dashboard_static"
 HOST = "127.0.0.1"
