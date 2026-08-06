@@ -6,6 +6,7 @@ output/
 .env
 token.json
 credentials.json
+data/
 
 node_modules/
 wordflow/node_modules/
@@ -15,3 +16,4 @@ wordflow/.next/
 .claude/
 wordflow/.env.local
 .cursor-worker.log
+MOBILE_HANDOFF.local.md
