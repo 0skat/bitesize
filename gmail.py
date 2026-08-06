@@ -7,9 +7,7 @@ from email.utils import parsedate_to_datetime
 from googleapiclient.discovery import build
 
 from config import console
-from google_auth import get_google_credentials
-
-_GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
+from google_auth import GMAIL_SCOPE, get_google_credentials
 
 # Matches the start of a quoted reply block (e.g. "On Mon, Jan 6, Alice wrote:")
 _QUOTE_HEADER_RE = re.compile(r"^On .{0,200} wrote:\s*$", re.MULTILINE)
@@ -32,7 +30,7 @@ def get_gmail_threads(max_threads: int, lookback_hours: int) -> list[dict]:
         }
     Returns [] if credentials are missing or on any API error.
     """
-    creds = get_google_credentials([_GMAIL_SCOPE])
+    creds = get_google_credentials([GMAIL_SCOPE])
     if creds is None:
         console.print(
             "  [yellow]⚠  Gmail credentials.json not found — skipping Gmail section[/yellow]"

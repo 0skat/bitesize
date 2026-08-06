@@ -4,9 +4,9 @@ from datetime import datetime, timedelta, timezone
 from googleapiclient.discovery import build
 
 from config import console
-from google_auth import get_google_credentials
+from google_auth import ALL_SCOPES, get_google_credentials
 
-SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
+SCOPES = ALL_SCOPES
 
 _EMPTY_RESULT = {"today": [], "upcoming": [], "past_reminders": []}
 
