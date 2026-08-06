@@ -97,21 +97,13 @@ def filter_headline_only(
 def fetch_article_content(url: str) -> str:
     """
     Fetch the full text of an article using trafilatura.
-    Returns the extracted plain text, or empty string on failure (paywall, timeout, etc.).
+    Falls back to archive mirrors when direct fetch fails or hits a paywall.
+    Returns extracted plain text, or empty string on failure.
     """
-    try:
-        downloaded = trafilatura.fetch_url(url)
-        if downloaded:
-            text = trafilatura.extract(
-                downloaded,
-                no_fallback=False,
-                include_comments=False,
-                include_tables=False,
-            )
-            return text or ""
-    except Exception:
-        pass
-    return ""
+    from paywall import fetch_with_paywall_bypass
+
+    text, _source = fetch_with_paywall_bypass(url)
+    return text
 
 
 def fetch_feed(
