@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import os
+import secrets
 from pathlib import Path
 
 from flask import Flask, jsonify, request, send_from_directory
 
 import settings_store as store
-from config import load_env, reload_settings
+from config import BASE_DIR, load_env, reload_settings
 from kindle import send_test_email
 
 load_env()
@@ -16,14 +17,28 @@ load_env()
 STATIC_DIR = Path(__file__).parent / "dashboard_static"
 HOST = "127.0.0.1"
 PORT = 8765
-DASHBOARD_TOKEN = os.getenv("DASHBOARD_TOKEN", "").strip()
+TOKEN_FILE = BASE_DIR / "data" / "dashboard.token"
+
+
+def _resolve_dashboard_token() -> str:
+    token = os.getenv("DASHBOARD_TOKEN", "").strip()
+    if token:
+        return token
+    TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+    if TOKEN_FILE.exists():
+        return TOKEN_FILE.read_text(encoding="utf-8").strip()
+    token = secrets.token_urlsafe(32)
+    TOKEN_FILE.write_text(token + "\n", encoding="utf-8")
+    print(f"Dashboard write token saved to {TOKEN_FILE}")
+    return token
+
+
+DASHBOARD_TOKEN = _resolve_dashboard_token()
 
 app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="")
 
 
 def _require_auth():
-    if not DASHBOARD_TOKEN:
-        return None
     auth = request.headers.get("Authorization", "")
     if auth != f"Bearer {DASHBOARD_TOKEN}":
         return jsonify({"error": "Unauthorized"}), 401
