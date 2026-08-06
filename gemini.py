@@ -119,10 +119,12 @@ def process_articles(articles: list[dict], batch_size: int | None = None) -> lis
         if response:
             parsed = _extract_json(response)
             if isinstance(parsed, list):
+                handled: set[int] = set()
                 for item in parsed:
                     idx = item.get("id", -1)
                     if not (0 <= idx < len(batch)):
                         continue
+                    handled.add(idx)
                     if item.get("skip", False):
                         art = batch[idx]
                         console.print(
@@ -137,6 +139,12 @@ def process_articles(articles: list[dict], batch_size: int | None = None) -> lis
                         else:
                             art["relevance"] = _fallback_relevance(art)
                         processed.append(art)
+                for j, art in enumerate(batch):
+                    if j in handled:
+                        continue
+                    a = art.copy()
+                    a["relevance"] = _fallback_relevance(a)
+                    processed.append(a)
                 continue  # batch handled
 
         # Fallback: keep all articles without summaries (score heuristically for ordering)
