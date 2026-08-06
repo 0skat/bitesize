@@ -11,7 +11,6 @@ a Kindle-friendly EPUB in the ./output/ folder.
 """
 
 import argparse
-import json
 import sys
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -19,12 +18,16 @@ from datetime import datetime
 
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 
-from config import console, load_env, SOURCES_FILE, OUTPUT_DIR
+from ai_locale import epub_label, format_digest_timestamp
+from config import console, get_settings, load_env, OUTPUT_DIR
 from feed import fetch_feed, fetch_article_content, filter_headline_only
+from paywall import log_summary, reset_stats
 from gemini import process_articles, generate_section_cover, generate_global_cover, article_relevance
 from epub import generate_epub
+from books import copy_to_icloud_books
 from kindle import send_to_kindle
-from ui import all_sources, select_sources
+import settings_store
+from sources_selection import build_selected_sources
 
 
 def _log_headline_drops(dropped: list[dict]) -> None:
@@ -51,16 +54,25 @@ def main() -> None:
         action="store_true",
         help="Write EPUB only; skip SMTP delivery to Kindle",
     )
+    parser.add_argument(
+        "--no-books",
+        action="store_true",
+        help="Skip copying the EPUB to the iCloud Books library",
+    )
     args = parser.parse_args()
 
     load_env()
+    settings = get_settings()
+    sources_tree = settings_store.load_sources_tree(enabled_only=True)
 
-    if not SOURCES_FILE.exists():
-        console.print(f"[red]Error:[/red] sources.json not found at {SOURCES_FILE}")
+    if not sources_tree:
+        console.print(
+            "[red]Error:[/red] No RSS sources configured. "
+            "Run [bold]python dashboard.py[/bold] to add feeds."
+        )
         sys.exit(1)
 
-    config = json.loads(SOURCES_FILE.read_text(encoding="utf-8"))
-    selected = all_sources(config) if args.all else select_sources(config)
+    selected = build_selected_sources(settings, args, sources_tree)
 
     if not selected:
         console.print("[yellow]No sources selected — exiting.[/yellow]")
@@ -100,6 +112,7 @@ def main() -> None:
 
     # ── 2. Fetch full article content in parallel ─────────────────────────────
     flat_for_content = [art for arts in raw_sections.values() for art in arts]
+    reset_stats()
 
     with Progress(
         SpinnerColumn(),
@@ -132,6 +145,7 @@ def main() -> None:
         + (f" [dim]({total_raw - fetched} unavailable/paywalled)[/dim]"
            if fetched < total_raw else "")
     )
+    log_summary(console)
 
     # ── 3. AI processing (Gemini) ─────────────────────────────────────────────
     console.print()
@@ -191,7 +205,7 @@ def main() -> None:
     # ── 6. Generate EPUB ──────────────────────────────────────────────────────
     console.print()
     now      = datetime.now()
-    filename = f"News Digest - {now.strftime('%B %d %Y %H%M')}.epub"
+    filename = f"{epub_label('digest_title')} - {format_digest_timestamp(now)}.epub"
     out_path = OUTPUT_DIR / filename
 
     with console.status("[cyan]Generating EPUB…[/cyan]"):
@@ -202,11 +216,20 @@ def main() -> None:
     console.print(f"   [dim]{out_path}[/dim]\n")
 
     # ── 7. Send to Kindle ─────────────────────────────────────────────────────
-    if args.no_kindle:
-        console.print("[dim]  Skipped Kindle delivery (--no-kindle).[/dim]")
+    if args.no_kindle or not settings.kindle_delivery_enabled:
+        reason = "--no-kindle" if args.no_kindle else "kindle_delivery_enabled=false"
+        console.print(f"[dim]  Skipped Kindle delivery ({reason}).[/dim]")
     else:
         console.print("[cyan]📬  Sending to Kindle…[/cyan]")
-        send_to_kindle(out_path)
+        send_to_kindle(out_path, settings)
+
+    # ── 8. Copy to iCloud Books (syncs to iPhone via iCloud) ──────────────────
+    if args.no_books or not settings.books_delivery_enabled:
+        reason = "--no-books" if args.no_books else "books_delivery_enabled=false"
+        console.print(f"[dim]  Skipped iCloud Books copy ({reason}).[/dim]")
+    else:
+        console.print("[cyan]📚  Copying to iCloud Books…[/cyan]")
+        copy_to_icloud_books(out_path, settings)
 
 
 if __name__ == "__main__":
