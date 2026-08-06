@@ -3,38 +3,31 @@ from pathlib import Path
 
 from rich.console import Console
 
+import settings_store
+from settings_store import Settings
+
 BASE_DIR = Path(__file__).parent
 SOURCES_FILE = BASE_DIR / "sources.json"
 OUTPUT_DIR = BASE_DIR / "output"
 
 console = Console()
 
-GEMINI_BATCH_SIZE = 20
-GEMINI_TIMEOUT = 120
-GEMINI_CHECK_TIMEOUT = 6
-MAX_ARTICLES_PER_FEED = 10
-TRUNCATE_CHARS = 450
-FEED_TIMEOUT = 15
-USER_AGENT = "BiteSIze/1.0 (+https://github.com/local/bitesize)"
+_settings: Settings | None = None
 
-# Drop articles that only have a headline (no RSS body, no trafilatura text, or no summary).
-MIN_BODY_CHARS = 180
-MIN_SUMMARY_CHARS = 80
 
-INDEX_ENTRIES_PER_PAGE = 10
-# Highest-scoring stories listed on the global digest cover (after sorting by relevance).
-TOP_PICKS_ON_COVER = 6
+def get_settings() -> Settings:
+    global _settings
+    if _settings is None:
+        settings_store.init_db()
+        settings_store.migrate_from_files_if_empty()
+        _settings = settings_store.load_settings()
+    return _settings
 
-GMAIL_MAX_THREADS = int(os.getenv("GMAIL_MAX_THREADS", "30"))
-GMAIL_LOOKBACK_HOURS = int(os.getenv("GMAIL_LOOKBACK_HOURS", "24"))
 
-CALENDAR_LOOKAHEAD_DAYS = int(os.getenv("CALENDAR_LOOKAHEAD_DAYS", "7"))
-CALENDAR_LOOKBACK_DAYS = int(os.getenv("CALENDAR_LOOKBACK_DAYS", "3"))
-
-AI_BACKEND = os.getenv("AI_BACKEND", "gemini")  # "gemini" | "ollama"
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3:8b")
-OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))
+def reload_settings() -> Settings:
+    global _settings
+    _settings = None
+    return get_settings()
 
 
 def load_env() -> None:
