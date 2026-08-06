@@ -18,7 +18,8 @@
       "BBC World":   "http://feeds.bbci.co.uk/news/world/rss.xml",
       "Al Jazeera":  "https://www.aljazeera.com/xml/rss/all.xml",
       "AP News":     "https://apnews.com/hub/apf-topnews?format=rss",
-      "NPR News":    "https://feeds.npr.org/1001/rss.xml"
+      "NPR News":    "https://feeds.npr.org/1001/rss.xml",
+      "Vox":         "https://www.vox.com/rss/index.xml"
     }
   },
   "integrations": {
