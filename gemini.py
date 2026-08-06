@@ -2,7 +2,8 @@ import json
 import re
 from typing import Optional
 
-from config import console, GEMINI_BATCH_SIZE, MIN_BODY_CHARS, TRUNCATE_CHARS
+from ai_locale import ai_output_language_rule
+from config import console, get_settings
 from ai import call as _call_ai, available as _ai_available
 
 
@@ -36,6 +37,11 @@ def article_relevance(art: dict) -> int:
     return _fallback_relevance(art)
 
 
+def relevance_display(art: dict) -> str:
+    """Format internal 0–100 score as a 0–10 rating (one decimal)."""
+    return f"{article_relevance(art) / 10:.1f}"
+
+
 def _normalize_relevance(raw) -> int:
     """Coerce model output to 0–100 for sorting and EPUB display."""
     try:
@@ -53,14 +59,14 @@ def _fallback_relevance(art: dict) -> int:
         return 78
     if n >= 2000:
         return 70
-    if n >= MIN_BODY_CHARS:
+    if n >= get_settings().min_body_chars:
         return 62
     if n > 120:
         return 48
     return 40
 
 
-def process_articles(articles: list[dict], batch_size: int = GEMINI_BATCH_SIZE) -> list[dict]:
+def process_articles(articles: list[dict], batch_size: int | None = None) -> list[dict]:
     """
     Single flat pass over all articles.
 
@@ -72,6 +78,8 @@ def process_articles(articles: list[dict], batch_size: int = GEMINI_BATCH_SIZE) 
     Falls back gracefully: if Gemini is unavailable or a batch fails,
     the original articles are kept without summaries.
     """
+    if batch_size is None:
+        batch_size = get_settings().gemini_batch_size
     if not _ai_available():
         console.print("  [yellow]⚠  AI backend not available — skipping AI processing[/yellow]")
         out = []
@@ -103,6 +111,7 @@ def process_articles(articles: list[dict], batch_size: int = GEMINI_BATCH_SIZE) 
             "relevance: integer 0–100 for how important this story is to a well-informed reader today "
             "(consider impact, timeliness, breadth of audience, and how central the topic is vs niche); "
             "use the full scale — not every item should be 80+."
+            + ai_output_language_rule()
         )
 
         response = _call_ai(instruction, article_block)
@@ -172,6 +181,7 @@ def generate_section_cover(category: str, articles: list[dict]) -> dict:
         "headline: short punchy headline summarising today's biggest story (max 12 words); "
         "editorial: 2-3 sentences newspaper-style overview of today's top stories in this section; "
         "top_stories: exactly 3 items, each with the original article title and a concise one-liner."
+        + ai_output_language_rule()
     )
 
     response = _call_ai(instruction, article_block, label=label)
@@ -232,6 +242,7 @@ def generate_global_cover(section_covers: dict[str, dict]) -> dict:
         "each highlight must include section (category name), "
         "headline (the lead article title or a tight rewrite, max 14 words), "
         "and story (one sentence expanding the angle for a newspaper reader)."
+        + ai_output_language_rule()
     )
 
     response = _call_ai(instruction, block, label=label)
@@ -250,7 +261,9 @@ def generate_global_cover(section_covers: dict[str, dict]) -> dict:
     return parsed
 
 
-def _truncate_text(text: str, max_chars: int = TRUNCATE_CHARS) -> str:
+def _truncate_text(text: str, max_chars: int | None = None) -> str:
+    if max_chars is None:
+        max_chars = get_settings().truncate_chars
     if len(text) <= max_chars:
         return text
     return text[:max_chars].rsplit(" ", 1)[0] + "…"
