@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BiteSIze Settings</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <h1>BiteSIze</h1>
+    <p class="subtitle">Settings dashboard — changes apply to the CLI immediately</p>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="settings">Settings</button>
+    <button class="tab" data-tab="sources">Sources</button>
+    <button class="tab" data-tab="kindle">Kindle</button>
+  </nav>
+
+  <main>
+    <section id="panel-settings" class="panel active">
+      <div id="settings-groups"></div>
+      <button id="save-settings" class="primary">Save settings</button>
+      <p id="settings-status" class="status"></p>
+    </section>
+
+    <section id="panel-sources" class="panel">
+      <div class="toolbar">
+        <input id="new-category-name" type="text" placeholder="New category name">
+        <button id="add-category">Add category</button>
+      </div>
+      <div id="sources-list"></div>
+      <p id="sources-status" class="status"></p>
+    </section>
+
+    <section id="panel-kindle" class="panel">
+      <div id="kindle-fields" class="card"></div>
+      <div class="actions">
+        <button id="save-kindle" class="primary">Save Kindle settings</button>
+        <button id="test-kindle">Send test email</button>
+      </div>
+      <p id="kindle-status" class="status"></p>
+    </section>
+  </main>
+
+  <footer>
+    <p>Backlog: content preview, AI summary preview, magazine covers</p>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>
