@@ -103,15 +103,19 @@ Output lands in `./output/News Digest - <date>.epub`.
 
 Each article receives a **0–100 relevance** score from the AI (or a simple fallback from article length when the model omits a score). The EPUB **sorts each section highest-first**, prints the score under the “Summary” heading on article pages, shows it on section index cards, and adds a **“Top stories by relevance”** block on the digest front page so the most important items are easy to find.
 
-### Daily run at 7:00 AM (macOS)
+### Daily run at 6:50 AM (macOS)
 
-On your Mac, install a LaunchAgent (runs in your GUI session; the machine must be awake and logged in at 7:00):
+On your Mac, install a LaunchAgent (runs in your GUI session; the machine must be awake and logged in at 6:50):
 
 ```bash
 ./scripts/install-daily-launchd.sh
 ```
 
-This writes `~/Library/LaunchAgents/com.bitesize.digest.plist`, runs `.venv/bin/python main.py --all` every day at **07:00** local time, and appends logs to `output/logs/digest-stdout.log` and `digest-stderr.log`. Uninstall:
+This writes `~/Library/LaunchAgents/com.bitesize.digest.plist`, runs `.venv/bin/python main.py --all` every day at **06:50** local time (so the digest is ready and syncing to iPhone by ~7:00), emails the EPUB to Kindle (when configured), copies it to your **iCloud Books** library (when iCloud Books is enabled on the Mac), and appends logs to `output/logs/digest-stdout.log` and `digest-stderr.log`.
+
+If auto-detection cannot find your Books folder, set `icloud_books_dir` in the dashboard (typical path: `~/Library/Mobile Documents/iCloud~com~apple~iBooks/Documents`).
+
+Uninstall:
 
 ```bash
 launchctl unload ~/Library/LaunchAgents/com.bitesize.digest.plist
@@ -126,10 +130,22 @@ For a close match to your Kindle (including Send-to-Kindle conversion), use Amaz
 
 ## Configuration
 
+Settings are stored in **`data/bitesize.db`** (SQLite). The CLI and dashboard share this database.
+
+### Settings dashboard
+
+```bash
+python dashboard.py
+# → http://127.0.0.1:8765
+```
+
+Use the web UI to edit AI, feed, EPUB, Kindle SMTP, integrations, and RSS sources. On first run, existing `sources.json` and `.env` values are imported automatically.
+
 | File | Purpose |
 |------|---------|
-| `sources.json` | RSS categories, feeds, integration toggles |
-| `.env` | Kindle SMTP, AI backend, Gmail/Calendar limits |
+| `data/bitesize.db` | All runtime settings and RSS sources (primary) |
+| `sources.json` | Legacy seed file — imported once if DB is empty |
+| `.env` | Legacy seed file — imported once if DB is empty |
 | `credentials.json` | Google OAuth client (gitignored; needed for Gmail/Calendar) |
 
 To enable Gmail or Calendar, set `"gmail": true` or `"google_calendar": true` under `"integrations"` in `sources.json`.
@@ -139,6 +155,8 @@ To enable Gmail or Calendar, set `"gmail": true` or `"google_calendar": true` un
 | Module | Role |
 |--------|------|
 | `main.py` | CLI entry point and pipeline orchestration |
+| `dashboard.py` | Local settings dashboard (Flask + HTML UI) |
+| `settings_store.py` | SQLite settings and RSS source storage |
 | `feed.py` | RSS fetch, article extraction, headline filtering |
 | `gemini.py` | AI prompts for news (uses `ai.py` router) |
 | `ai.py` | Routes to Gemini CLI or Ollama |
@@ -153,3 +171,25 @@ To enable Gmail or Calendar, set `"gmail": true` or `"google_calendar": true` un
 - RSS fetching uses `requests` + `certifi` so feeds work on macOS Python installs where `feedparser.parse(url)` fails SSL verification.
 - There is also a legacy Node.js script (`bitesize.js`) for topic exploration — separate from the Python Kindle digest.
 - Feature branches (`feature/phase1-*` through `feature/phase4-ollama`) contain the incremental history; `main` consolidates all four phases.
+
+## Open source
+
+BiteSIze is MIT-licensed. See [LICENSE](LICENSE), [SECURITY.md](SECURITY.md), and [CONTRIBUTING.md](CONTRIBUTING.md).
+
+**Before your first run:** copy `.env.example` → `.env`, run `python dashboard.py` to configure settings, or let the CLI migrate from `.env`/`sources.json` once.
+
+**Security notes:**
+
+- Dashboard binds to `127.0.0.1:8765` only.
+- Set `DASHBOARD_TOKEN` to protect write APIs on shared machines.
+- RSS feed URLs are fetched as the local user — only add feeds you trust.
+- `wordflow/` is an experimental subproject; do not expose it publicly without auth.
+
+## Pre-publish checklist (maintainers)
+
+- [ ] No `.env`, `data/`, `token.json`, or `credentials.json` in git
+- [ ] PII scan clean on tracked files (`rg -i 'your-email|/Users/you' --glob '!data/**'`)
+- [ ] `pytest tests/ -v` passes
+- [ ] `pip-audit -r requirements.txt` clean or documented exceptions
+- [ ] LICENSE + SECURITY.md present
+- [ ] GitHub repo set to public with security advisories enabled
