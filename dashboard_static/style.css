@@ -28,7 +28,23 @@ header, main, footer {
 }
 
 header h1 { margin: 0; font-size: 1.75rem; }
-.subtitle { color: var(--muted); margin: 0.25rem 0 0; }
+.subtitle { color: var(--muted); margin: 0.25rem 0 0.75rem; }
+
+.token-field {
+  margin-top: 0.75rem;
+  max-width: 420px;
+}
+
+.token-field label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 0.25rem;
+}
+
+.token-field input {
+  width: 100%;
+}
 
 .tabs {
   display: flex;

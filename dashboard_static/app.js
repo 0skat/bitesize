@@ -26,12 +26,28 @@ const KINDLE_KEYS = [
 
 let settingsData = {};
 
+const TOKEN_KEY = "bitesize_dashboard_token";
+
+function dashboardToken() {
+  const el = $("#dashboard-token");
+  const v = (el?.value || localStorage.getItem(TOKEN_KEY) || "").trim();
+  if (el && v && !el.value) el.value = v;
+  return v;
+}
+
+function authHeaders() {
+  const headers = { "Content-Type": "application/json" };
+  const token = dashboardToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
+}
+
 function $(sel) { return document.querySelector(sel); }
 function $$(sel) { return [...document.querySelectorAll(sel)]; }
 
 async function api(path, opts = {}) {
   const r = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders(),
     ...opts,
   });
   const data = r.headers.get("content-type")?.includes("json")
@@ -281,3 +297,14 @@ $("#add-category").onclick = async () => {
 loadSettings().then(refreshSources).catch((e) => {
   setStatus($("#settings-status"), e.message, false);
 });
+
+const tokenInput = $("#dashboard-token");
+if (tokenInput) {
+  const saved = localStorage.getItem(TOKEN_KEY);
+  if (saved) tokenInput.value = saved;
+  tokenInput.addEventListener("change", () => {
+    const v = tokenInput.value.trim();
+    if (v) localStorage.setItem(TOKEN_KEY, v);
+    else localStorage.removeItem(TOKEN_KEY);
+  });
+}
