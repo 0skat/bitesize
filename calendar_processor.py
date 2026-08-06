@@ -3,6 +3,7 @@ import json
 import re
 from typing import Optional
 
+from ai_locale import ai_output_language_rule
 from config import console
 from ai import call as _call_ai, available as _ai_available
 
@@ -80,6 +81,7 @@ def generate_calendar_cover(articles: list[dict]) -> dict:
         "Second: the most important or time-sensitive event this week. "
         "top_stories: the 3 most significant events (today first, then this week). "
         "title: event name. one_liner: time + any key context."
+        + ai_output_language_rule()
     )
 
     response = _call_ai(instruction, content_block, label=label)
@@ -116,6 +118,7 @@ def _format_with_gemini(events: dict) -> Optional[dict]:
         "Example: 'Team standup (10 AM) overlaps with Product sync (9:45 AM–10:15 AM)'. "
         "Empty array if no conflicts. "
         "If a field has no content, return an empty array — never omit the key."
+        + ai_output_language_rule()
     )
 
     response = _call_ai(instruction, json.dumps(events), label="calendar-format")
