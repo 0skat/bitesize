@@ -1,12 +1,38 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest } from "next/server";
 
+import { isLocalhostRequest } from "@/lib/requestGuard";
+
 const client = new Anthropic();
 
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
-  const { messages } = await req.json();
+  const host = req.headers.get("host");
+  if (!isLocalhostRequest(host) && process.env.ALLOW_PUBLIC_CHAT !== "1") {
+    return new Response(JSON.stringify({ error: "Forbidden" }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  let body: { messages?: unknown };
+  try {
+    body = await req.json();
+  } catch {
+    return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const messages = Array.isArray(body?.messages) ? body.messages.slice(0, 20) : [];
+  if (!messages.length) {
+    return new Response(JSON.stringify({ error: "messages required" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
 
   try {
     const stream = client.messages.stream({
