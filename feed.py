@@ -66,15 +66,17 @@ def _normalize_body(body: str, title: str) -> str:
 
 def has_readable_content(
     article: dict,
-    min_body: int = None,
-    min_summary: int = None,
+    min_body: int | None = None,
+    min_summary: int | None = None,
 ) -> bool:
     """True when an article has enough body text or an AI/RSS summary to read."""
+    s = get_settings()
+    if min_body is None:
+        min_body = s.min_body_chars
+    if min_summary is None:
+        min_summary = s.min_summary_chars
     body = _normalize_body(article.get("content", ""), article.get("title", ""))
     summary = (article.get("summary") or "").strip()
-    s = get_settings()
-    min_body = min_body if min_body is not None else s.min_body_chars
-    min_summary = min_summary if min_summary is not None else s.min_summary_chars
     return len(body) >= min_body or len(summary) >= min_summary
 
 
