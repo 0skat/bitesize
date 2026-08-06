@@ -3,7 +3,7 @@ import json
 import subprocess
 from typing import Optional
 
-from config import console, GEMINI_TIMEOUT, GEMINI_CHECK_TIMEOUT
+from config import console, get_settings
 
 _GEMINI_OK: Optional[bool] = None
 
@@ -16,7 +16,7 @@ def available() -> bool:
             subprocess.run(
                 ["gemini", "--version"],
                 capture_output=True,
-                timeout=GEMINI_CHECK_TIMEOUT,
+                timeout=get_settings().gemini_check_timeout,
             )
             _GEMINI_OK = True
         except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -33,7 +33,7 @@ def call(instruction: str, stdin_data: str, label: str = "") -> Optional[str]:
             input=stdin_data,
             capture_output=True,
             text=True,
-            timeout=GEMINI_TIMEOUT,
+            timeout=get_settings().gemini_timeout,
         )
         if result.returncode == 0:
             data = json.loads(result.stdout)
@@ -44,7 +44,10 @@ def call(instruction: str, stdin_data: str, label: str = "") -> Optional[str]:
                 + (f": {result.stderr.strip()[:200]}" if result.stderr.strip() else "")
             )
     except subprocess.TimeoutExpired:
-        console.print(f"  [yellow]⚠  {tag}Gemini call timed out ({GEMINI_TIMEOUT}s)[/yellow]")
+        console.print(
+            f"  [yellow]⚠  {tag}Gemini call timed out "
+            f"({get_settings().gemini_timeout}s)[/yellow]"
+        )
     except json.JSONDecodeError as e:
         console.print(f"  [yellow]⚠  {tag}Gemini outer JSON decode failed: {e}[/yellow]")
     except FileNotFoundError:
