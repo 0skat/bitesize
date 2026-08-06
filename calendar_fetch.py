@@ -33,11 +33,17 @@ def get_calendar_events(lookahead_days: int, lookback_days: int) -> dict:
         service = build("calendar", "v3", credentials=creds)
         calendars = _list_calendars(service)
 
-        now = datetime.now(tz=timezone.utc)
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        local_now = datetime.now().astimezone()
+        today_start = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
         today_end = today_start + timedelta(days=1)
         upcoming_end = today_start + timedelta(days=lookahead_days + 1)
         lookback_start = today_start - timedelta(days=lookback_days)
+
+        today_start_utc = today_start.astimezone(timezone.utc)
+        today_end_utc = today_end.astimezone(timezone.utc)
+        upcoming_end_utc = upcoming_end.astimezone(timezone.utc)
+        lookback_start_utc = lookback_start.astimezone(timezone.utc)
+        now_utc = datetime.now(tz=timezone.utc)
 
         today_events: list[dict] = []
         upcoming_events: list[dict] = []
@@ -50,29 +56,30 @@ def get_calendar_events(lookahead_days: int, lookback_days: int) -> dict:
             # Fetch today + upcoming in one query
             future_items = _fetch_events(
                 service, cal_id,
-                time_min=today_start,
-                time_max=upcoming_end,
+                time_min=today_start_utc,
+                time_max=upcoming_end_utc,
             )
             for event in future_items:
                 start_dt, is_all_day = _parse_start(event)
                 if start_dt is None:
                     continue
-                if today_start <= start_dt < today_end:
+                start_local = start_dt.astimezone(local_now.tzinfo)
+                if today_start <= start_local < today_end:
                     today_events.append(_to_today_event(event, cal_name, is_all_day))
-                elif today_end <= start_dt < upcoming_end:
+                elif today_end <= start_local < upcoming_end:
                     upcoming_events.append(_to_upcoming_event(event, cal_name, is_all_day))
 
             # Fetch past events/reminders for lookback window
             past_items = _fetch_events(
                 service, cal_id,
-                time_min=lookback_start,
-                time_max=today_start,
+                time_min=lookback_start_utc,
+                time_max=today_start_utc,
             )
             for event in past_items:
                 end_dt = _parse_end(event)
                 if end_dt is None:
                     continue
-                past_reminders.append(_to_past_reminder(event, now, end_dt))
+                past_reminders.append(_to_past_reminder(event, now_utc, end_dt))
 
         today_events.sort(key=lambda e: e.get("_sort_key", ""))
         upcoming_events.sort(key=lambda e: e.get("_sort_key", ""))
