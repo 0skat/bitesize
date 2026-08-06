@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install a macOS LaunchAgent that runs BiteSIze every day at 7:00 AM (local time).
+# Install a macOS LaunchAgent that runs BiteSIze every day at 6:50 AM (local time).
 # Requires a project virtualenv at .venv with dependencies installed.
 set -euo pipefail
 
@@ -34,9 +34,9 @@ cat > "${PLIST}" <<EOF
   <key>StartCalendarInterval</key>
   <dict>
     <key>Hour</key>
-    <integer>7</integer>
+    <integer>6</integer>
     <key>Minute</key>
-    <integer>0</integer>
+    <integer>50</integer>
   </dict>
   <key>StandardOutPath</key>
   <string>${ROOT}/output/logs/digest-stdout.log</string>
@@ -50,6 +50,7 @@ launchctl unload "${PLIST}" 2>/dev/null || true
 launchctl load -w "${PLIST}"
 
 echo "Installed ${PLIST}"
-echo "  Runs daily at 7:00 AM: ${VENV_PY} ${ROOT}/main.py --all"
+echo "  Runs daily at 6:50 AM: ${VENV_PY} ${ROOT}/main.py --all"
+echo "  Delivers EPUB to Kindle (if configured) and copies to iCloud Books for iPhone sync"
 echo "  Logs: ${ROOT}/output/logs/digest-stdout.log (and digest-stderr.log)"
 echo "  Uninstall: launchctl unload \"${PLIST}\" && rm \"${PLIST}\""
