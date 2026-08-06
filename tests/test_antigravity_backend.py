@@ -31,5 +31,5 @@ def test_call_parses_agy_json_response(monkeypatch):
         out = antigravity_backend.call("Do JSON", "input", label="test")
     assert out == '[{"id":0,"skip":false,"summary":"Ok.","relevance":70}]'
     args = mock_run.call_args[0][0]
-    assert args[0] == "agy"
+    assert args[0] == antigravity_backend._AGY_BIN
     assert "--model=gemini-3.5-flash-high" in args

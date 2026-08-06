@@ -2,11 +2,15 @@
 
 import json
 import subprocess
+from pathlib import Path
 from typing import Optional
 
 from config import console, get_settings
 
 _AGY_OK: Optional[bool] = None
+
+# Shortcuts and LaunchAgents often omit ~/.local/bin from PATH.
+_AGY_BIN = str(Path.home() / ".local" / "bin" / "agy")
 
 
 def available() -> bool:
@@ -15,7 +19,7 @@ def available() -> bool:
     if _AGY_OK is None:
         try:
             subprocess.run(
-                ["agy", "--version"],
+                [_AGY_BIN, "--version"],
                 capture_output=True,
                 timeout=get_settings().gemini_check_timeout,
             )
@@ -36,12 +40,11 @@ def call(instruction: str, stdin_data: str, label: str = "") -> Optional[str]:
     try:
         result = subprocess.run(
             [
-                "agy",
+                _AGY_BIN,
                 f"--model={model}",
                 "--output-format",
                 "json",
                 "--disable-slash-commands",
-                "--dangerously-skip-permissions",
                 "-p",
                 prompt,
                 "--print-timeout",
