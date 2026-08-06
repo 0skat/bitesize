@@ -3,6 +3,7 @@ import json
 import re
 from typing import Optional
 
+from ai_locale import ai_output_language_rule
 from config import console
 from ai import call as _call_ai, available as _ai_available
 
@@ -94,6 +95,7 @@ def generate_inbox_cover(articles: list[dict]) -> dict:
         "Second: the most important thread in one sentence. "
         "top_stories: exactly 3 items, priority 'action' threads first, then 'update'. "
         "title: the thread subject. one_liner: the summary sentence from triage."
+        + ai_output_language_rule()
     )
 
     response = _call_ai(instruction, article_block, label=label)
@@ -148,6 +150,7 @@ def _triage_batch(batch: list[dict], offset: int) -> dict[int, dict]:
         "- summary: one sentence maximum. Lead with WHO and WHAT.\n"
         '  Good: "Ana asked for feedback on the Q2 proposal by Friday."\n'
         '  Bad:  "This email is about a proposal from Ana regarding Q2."'
+        + ai_output_language_rule()
     )
 
     response = _call_ai(instruction, thread_block, label=f"gmail-triage:{offset}")
