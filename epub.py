@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 
 from ebooklib import epub
 
-from ai_locale import ai_language_code, epub_label, format_digest_date
+from ai_locale import ai_language_code, epub_label, format_digest_date, format_tag_line
 from config import OUTPUT_DIR, get_settings
 from cover_art import render_magazine_cover
 from gemini import article_relevance, relevance_display
@@ -532,13 +532,24 @@ def _article_body_html(art: dict) -> str:
     summary = (art.get("summary") or "").strip()
     parts: list[str] = []
 
+    tag_line = ""
+    if art.get("tipo"):
+        tag_line = format_tag_line(art["tipo"], art.get("temas") or [])
+
     if summary:
         rel = relevance_display(art)
         parts.append(
             f'<div class="summary">'
             f'<p class="summary-label">{_e(epub_label("summary"))}</p>'
             f'<p class="summary-meta-line">{_e(epub_label("relevance_score"))}: {rel}/10</p>'
-            f"<p>{_e(summary)}</p>"
+        )
+        if tag_line:
+            parts.append(f'<p class="summary-meta-line">{_e(tag_line)}</p>')
+        parts.append(f"<p>{_e(summary)}</p>" f"</div>")
+    elif tag_line:
+        parts.append(
+            f'<div class="summary">'
+            f'<p class="summary-meta-line">{_e(tag_line)}</p>'
             f"</div>"
         )
 

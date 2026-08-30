@@ -33,6 +33,19 @@ EPUB_LABELS: dict[str, dict[str, str]] = {
         "fallback_global_editorial": (
             "Este resumo cobre {total} histórias em {sections} seções."
         ),
+        "tipo_resumo": "Resumo",
+        "tipo_artigo_completo": "Artigo completo",
+        "tema_política": "política",
+        "tema_saúde": "saúde",
+        "tema_economia": "economia",
+        "tema_tecnologia": "tecnologia",
+        "tema_mundo": "mundo",
+        "tema_brasil": "brasil",
+        "tema_cultura": "cultura",
+        "tema_esportes": "esportes",
+        "tema_ciência": "ciência",
+        "tema_opinião": "opinião",
+        "tema_clima": "clima",
         "weekdays": (
             "segunda-feira",
             "terça-feira",
@@ -78,6 +91,19 @@ EPUB_LABELS: dict[str, dict[str, str]] = {
         "fallback_global_editorial": (
             "Today's digest covers {total} stories across {sections} sections."
         ),
+        "tipo_resumo": "Summary",
+        "tipo_artigo_completo": "Full article",
+        "tema_política": "política",
+        "tema_saúde": "saúde",
+        "tema_economia": "economia",
+        "tema_tecnologia": "tecnologia",
+        "tema_mundo": "mundo",
+        "tema_brasil": "brasil",
+        "tema_cultura": "cultura",
+        "tema_esportes": "esportes",
+        "tema_ciência": "ciência",
+        "tema_opinião": "opinião",
+        "tema_clima": "clima",
         "weekdays": (
             "Monday",
             "Tuesday",
@@ -131,6 +157,20 @@ def _labels() -> dict[str, str]:
     if code in EPUB_LABELS:
         return EPUB_LABELS[code]
     return EPUB_LABELS["en"]
+
+
+def _tema_label_key(tema: str) -> str:
+    return "tema_" + tema.replace(" ", "_")
+
+
+def format_tag_line(tipo: str, temas: list[str]) -> str:
+    """One-line display: tipo label, then temas joined."""
+    tipo_key = "tipo_artigo_completo" if tipo == "artigo-completo" else "tipo_resumo"
+    parts = [epub_label(tipo_key)]
+    if temas:
+        tema_labels = [epub_label(_tema_label_key(t)) for t in temas]
+        parts.append(", ".join(tema_labels))
+    return " · ".join(parts)
 
 
 def epub_label(key: str, **kwargs: str | int) -> str:
