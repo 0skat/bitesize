@@ -2,6 +2,13 @@
 
 AI-powered personal news digest that fetches RSS feeds (and optional Gmail/Calendar), summarizes articles, builds a magazine-style Kindle EPUB, and delivers it to Kindle and iCloud Books.
 
+| Doc | For |
+|-----|-----|
+| [CLAUDE.md](CLAUDE.md) | Agents working in this repo |
+| [ROADMAP.md](ROADMAP.md) | What is shipped vs what comes next |
+| [ISSUES.md](ISSUES.md) | Known problems (this repo has no GitHub issues yet) |
+| [docs/LOCAL_DEV.md](docs/LOCAL_DEV.md) | Dev commands and tests |
+
 ## What it does
 
 ```
@@ -40,9 +47,11 @@ python dashboard.py
 
 Edit AI backend, RSS sources, Kindle SMTP, language, and delivery flags. On first run, values from `sources.json` and `.env` are imported into `data/bitesize.db`.
 
+Write APIs always need a Bearer token. The dashboard creates one at `data/dashboard.token` if `DASHBOARD_TOKEN` is not set in `.env`. Paste that token into the “Write API token” field (the browser remembers it). GET reads stay open on localhost.
+
 ### 3. AI backend (pick one)
 
-Defaults in the database: **Antigravity** (`agy`) with `gemini-3.5-flash-high`, summaries in **pt-BR**.
+Defaults in the database: **Antigravity** (`agy`) with `gemini-3.5-flash-high`, summaries in **pt-BR**. Change the model in the dashboard if you want a different one.
 
 **Antigravity (default)**
 
@@ -191,7 +200,7 @@ BiteSIze is MIT-licensed. See [LICENSE](LICENSE), [SECURITY.md](SECURITY.md), an
 **Security notes:**
 
 - Dashboard binds to `127.0.0.1:8765` only.
-- Set `DASHBOARD_TOKEN` in `.env` to protect write APIs on shared machines.
+- Write APIs require a Bearer token (`DASHBOARD_TOKEN` or `data/dashboard.token`).
 - RSS feed URLs are fetched as the local user — only add feeds you trust.
 - `wordflow/` is an experimental subproject; do not expose it publicly without auth.
 
