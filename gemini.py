@@ -5,6 +5,7 @@ from typing import Optional
 from ai_locale import ai_output_language_rule
 from config import console, get_settings
 from ai import call as _call_ai, available as _ai_available
+from tags import TEMAS, normalize_tags
 
 
 def _extract_json(response: str, label: str = ""):
@@ -118,6 +119,7 @@ def process_articles(articles: list[dict], batch_size: int | None = None) -> lis
         for art in articles:
             a = art.copy()
             a["relevance"] = _fallback_relevance(a)
+            normalize_tags(a)
             out.append(a)
         return spread_tied_scores(out)
 
@@ -133,17 +135,21 @@ def process_articles(articles: list[dict], batch_size: int | None = None) -> lis
             )
             article_block += f'[{j}] "{art["title"]}"\n{preview}\n\n'
 
+        temas_list = ", ".join(sorted(TEMAS))
         instruction = (
             f"You are a news editor reviewing {len(batch)} article snippets. "
             "Return ONLY a raw JSON array — no markdown fences, no explanation — with one object per article: "
-            '[{"id":0,"skip":false,"summary":"Sentence one. Sentence two.","relevance":72}] '
+            '[{"id":0,"skip":false,"summary":"Sentence one. Sentence two.","relevance":72,'
+            '"tipo":"artigo-completo","temas":["política"]}] '
             "Rules: skip=true ONLY for pure advertisements or sponsored/promotional content; "
             "real news is never skipped regardless of topic. "
             "summary: exactly 2 factual sentences, no editorialising, no filler phrases. "
             "relevance: integer 0–100 comparing this story to the others in THIS batch "
             "(impact, timeliness, breadth of audience, central vs niche). "
             "Use the full scale: at most one in five items above 80, at least one in five below 45. "
-            "Do not give several stories the same number."
+            "Do not give several stories the same number. "
+            'tipo: exactly "resumo" (paywall teaser or lede-only) or "artigo-completo" (enough body to read). '
+            f"temas: zero or more from this fixed list only — do not invent labels: {temas_list}."
             + ai_output_language_rule()
         )
 
@@ -171,12 +177,14 @@ def process_articles(articles: list[dict], batch_size: int | None = None) -> lis
                             art["relevance"] = _normalize_relevance(item.get("relevance"))
                         else:
                             art["relevance"] = _fallback_relevance(art)
+                        normalize_tags(art, item)
                         processed.append(art)
                 for j, art in enumerate(batch):
                     if j in handled:
                         continue
                     a = art.copy()
                     a["relevance"] = _fallback_relevance(a)
+                    normalize_tags(a)
                     processed.append(a)
                 continue  # batch handled
 
@@ -185,6 +193,7 @@ def process_articles(articles: list[dict], batch_size: int | None = None) -> lis
             a = art.copy()
             if "relevance" not in a:
                 a["relevance"] = _fallback_relevance(a)
+            normalize_tags(a)
             processed.append(a)
 
     return spread_tied_scores(processed)
