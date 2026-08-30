@@ -1,7 +1,7 @@
 feedparser>=6.0
 questionary>=2.0
 beautifulsoup4>=4.12
-lxml>=5.0
+lxml>=6.1.2
 ebooklib>=0.18
 rich>=13.0
 trafilatura>=1.6
