@@ -52,6 +52,8 @@ You can keep a 0–10 display by mapping **rank position** to a score after a li
 
 Do **not** implement full pairwise on the daily 120-article run. Do **not** z-score the whole edition just to make the Kindle look more varied.
 
+*Implemented 30 Aug 2026 (task 3): `relevance_source`, listwise un-cluster pass, cover ranking prefers AI scores.*
+
 ## Gaps
 
 - Little evidence on pt-BR prompts and Antigravity/Gemini for *news importance* (not query relevance).

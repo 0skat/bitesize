@@ -6,6 +6,10 @@ from ai_locale import ai_output_language_rule
 from config import console, get_settings
 from ai import call as _call_ai, available as _ai_available
 
+CLUSTERED_AI_SCORE_RATIO = 0.35
+LISTWISE_SCORE_HIGH = 92
+LISTWISE_SCORE_LOW = 40
+
 
 def _extract_json(response: str, label: str = ""):
     """Try to parse JSON from a Gemini response, tolerating markdown fences."""
@@ -65,6 +69,85 @@ def _fallback_relevance(art: dict) -> int:
     return 30 + min(28, n * 28 // 8000)
 
 
+def _relevance_from_listwise_rank(rank: int, n: int) -> int:
+    """Map 1-based listwise rank (1 = most important) to 0–100."""
+    if n <= 0:
+        return 50
+    if n == 1:
+        return LISTWISE_SCORE_HIGH
+    span = LISTWISE_SCORE_HIGH - LISTWISE_SCORE_LOW
+    return LISTWISE_SCORE_HIGH - (rank - 1) * span // (n - 1)
+
+
+def _assign_fallback_relevance(art: dict) -> None:
+    art["relevance"] = _fallback_relevance(art)
+    art["relevance_source"] = "fallback"
+
+
+def _ai_scores_too_clustered(ai_articles: list[dict]) -> bool:
+    n = len(ai_articles)
+    if n < 2:
+        return False
+    unique = len({a["relevance"] for a in ai_articles})
+    return unique / n < CLUSTERED_AI_SCORE_RATIO
+
+
+def _listwise_rank_instruction(n: int) -> str:
+    return (
+        f"You are a news editor. Rank these {n} story titles by importance to a general reader "
+        "(impact, timeliness, breadth). "
+        "Return ONLY a raw JSON array — no markdown fences — ordered most important first: "
+        '[{"id":0},{"id":2},{"id":1}] '
+        "Each object needs only id matching the bracketed index before each title."
+        + ai_output_language_rule()
+    )
+
+
+def _parse_listwise_order(response: str, n: int) -> list[int] | None:
+    parsed = _extract_json(response, label="listwise-rank")
+    if not isinstance(parsed, list):
+        return None
+    order: list[int] = []
+    seen: set[int] = set()
+    for item in parsed:
+        if isinstance(item, dict):
+            idx = item.get("id")
+        else:
+            try:
+                idx = int(item)
+            except (TypeError, ValueError):
+                continue
+        if not isinstance(idx, int) or not (0 <= idx < n) or idx in seen:
+            continue
+        seen.add(idx)
+        order.append(idx)
+    if len(order) != n:
+        return None
+    return order
+
+
+def _maybe_remap_clustered_batch(batch_results: list[dict]) -> None:
+    """One listwise pass when AI scores in a batch are too clustered."""
+    ai_articles = [a for a in batch_results if a.get("relevance_source") == "ai"]
+    if not _ai_scores_too_clustered(ai_articles):
+        return
+
+    n = len(ai_articles)
+    title_block = ""
+    for local_i, art in enumerate(ai_articles):
+        title_block += f'[{local_i}] "{art["title"]}"\n'
+
+    response = _call_ai(_listwise_rank_instruction(n), title_block, label="listwise-rank")
+    if not response:
+        return
+    order = _parse_listwise_order(response, n)
+    if order is None:
+        return
+
+    for rank, local_i in enumerate(order, start=1):
+        ai_articles[local_i]["relevance"] = _relevance_from_listwise_rank(rank, n)
+
+
 def spread_tied_scores(articles: list[dict]) -> list[dict]:
     """Give unique scores inside a tied group, newest first, without reordering groups."""
     from collections import defaultdict
@@ -117,7 +200,7 @@ def process_articles(articles: list[dict], batch_size: int | None = None) -> lis
         out = []
         for art in articles:
             a = art.copy()
-            a["relevance"] = _fallback_relevance(a)
+            _assign_fallback_relevance(a)
             out.append(a)
         return spread_tied_scores(out)
 
@@ -125,6 +208,7 @@ def process_articles(articles: list[dict], batch_size: int | None = None) -> lis
 
     for i in range(0, len(articles), batch_size):
         batch = articles[i : i + batch_size]
+        batch_results: list[dict] = []
 
         article_block = ""
         for j, art in enumerate(batch):
@@ -169,22 +253,27 @@ def process_articles(articles: list[dict], batch_size: int | None = None) -> lis
                         art["summary"] = item.get("summary", "")
                         if "relevance" in item:
                             art["relevance"] = _normalize_relevance(item.get("relevance"))
+                            art["relevance_source"] = "ai"
                         else:
-                            art["relevance"] = _fallback_relevance(art)
-                        processed.append(art)
+                            _assign_fallback_relevance(art)
+                        batch_results.append(art)
                 for j, art in enumerate(batch):
                     if j in handled:
                         continue
                     a = art.copy()
-                    a["relevance"] = _fallback_relevance(a)
-                    processed.append(a)
+                    _assign_fallback_relevance(a)
+                    batch_results.append(a)
+                _maybe_remap_clustered_batch(batch_results)
+                processed.extend(batch_results)
                 continue  # batch handled
 
         # Fallback: keep all articles without summaries (score heuristically for ordering)
         for art in batch:
             a = art.copy()
             if "relevance" not in a:
-                a["relevance"] = _fallback_relevance(a)
+                _assign_fallback_relevance(a)
+            else:
+                a["relevance_source"] = "fallback"
             processed.append(a)
 
     return spread_tied_scores(processed)

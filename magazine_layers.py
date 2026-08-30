@@ -35,6 +35,12 @@ def headline_matches(a: dict | None, headline: str) -> bool:
     return is_same_story(a, {"title": headline, "url": ""})
 
 
+def _cover_sort_key(relevance: int, cat: str, art: dict) -> tuple:
+    """Prefer AI-scored articles for cover picks; then relevance; then section/title."""
+    ai_first = 0 if art.get("relevance_source") == "ai" else 1
+    return (ai_first, -relevance, (cat or "").lower(), _norm(art.get("title")))
+
+
 def find_hero_article(
     sections: dict[str, list[dict]],
     global_cover: dict | None,
@@ -55,7 +61,7 @@ def find_hero_article(
     if not ranked:
         return None, None
     ranked.sort(
-        key=lambda x: (-x[0], (x[1] or "").lower(), _norm(x[2].get("title"))),
+        key=lambda x: _cover_sort_key(x[0], x[1], x[2]),
     )
     _, cat, art = ranked[0]
     return art, cat
@@ -125,6 +131,6 @@ def ranked_excluding_hero(
                 continue
             ranked.append((article_relevance(art), cat, art))
     ranked.sort(
-        key=lambda x: (-x[0], (x[1] or "").lower(), _norm(x[2].get("title"))),
+        key=lambda x: _cover_sort_key(x[0], x[1], x[2]),
     )
     return ranked[:limit]

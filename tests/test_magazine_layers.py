@@ -1,5 +1,6 @@
 from magazine_layers import (
     cover_teasers,
+    find_hero_article,
     is_same_story,
     ranked_excluding_hero,
 )
@@ -40,3 +41,47 @@ def test_ranked_excluding_hero():
     ranked = ranked_excluding_hero(sections, hero, limit=5)
     assert len(ranked) == 1
     assert ranked[0][2]["title"] == "Second"
+
+
+def test_find_hero_article_prefers_ai_over_higher_fallback():
+    sections = {
+        "Brazil": [
+            {
+                "title": "Fallback long",
+                "url": "https://f",
+                "relevance": 69,
+                "relevance_source": "fallback",
+            },
+            {
+                "title": "AI modest",
+                "url": "https://a",
+                "relevance": 45,
+                "relevance_source": "ai",
+            },
+        ],
+    }
+    hero, _cat = find_hero_article(sections, None)
+    assert hero["title"] == "AI modest"
+
+
+def test_ranked_excluding_hero_prefers_ai_over_higher_fallback():
+    hero = {"title": "Hero", "url": "https://h", "relevance": 99, "relevance_source": "ai"}
+    sections = {
+        "Brazil": [
+            hero,
+            {
+                "title": "Fallback high",
+                "url": "https://f",
+                "relevance": 68,
+                "relevance_source": "fallback",
+            },
+            {
+                "title": "AI lower",
+                "url": "https://a",
+                "relevance": 50,
+                "relevance_source": "ai",
+            },
+        ],
+    }
+    ranked = ranked_excluding_hero(sections, hero, limit=5)
+    assert ranked[0][2]["title"] == "AI lower"
