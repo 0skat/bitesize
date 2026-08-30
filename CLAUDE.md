@@ -54,7 +54,7 @@ AI calls go through `ai.py` (`antigravity` / `gemini` / `ollama`). Prompts live 
 - **Stock Kindle has no JavaScript.** Internal links, covers, and reflowable HTML only. See `docs/research/2026-08-14-kindle-interactive-epub.md` before promising interactivity.
 - **Tags / completeness / Safari Reader** — planned, not built. See [ROADMAP.md](ROADMAP.md) items 1–2 and `docs/research/2026-08-30-safari-reader-paywall.md`. Do not invent English topic labels; the vocabulary is pt-BR.
 - **`wordflow/`** is a separate experimental Next.js app. Do not treat it as part of the digest unless the task names it.
-- **`main` is still the empty init commit.** Real work is on `chore/land-session-work`. There is no git remote.
+- **Published default is `main`.** Remote: `https://github.com/victor-salles/bitesize`. Do not commit `.env`, `data/`, or `output/`.
 
 ## Put down
 

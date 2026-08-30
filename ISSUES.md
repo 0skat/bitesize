@@ -38,7 +38,7 @@ This matches the documented single-user threat model. It is still an issue if th
 ## Work is not on `main`, and there is no remote
 
 **Expected:** The running digest is the published default branch.  
-**Actual:** Useful work is now on `main` (merged 30 August 2026). There is still no git remote until the first GitHub push.
+**Actual:** Useful work is on `main` at [github.com/victor-salles/bitesize](https://github.com/victor-salles/bitesize). Local feature worktrees may still exist; they are not the published default.
 
 ## Relevance scores pile up in the same edition
 

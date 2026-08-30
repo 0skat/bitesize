@@ -13,7 +13,7 @@ Users supply their own RSS feeds, SMTP credentials, and AI backend keys.
 
 ## Reporting a vulnerability
 
-Open a [private GitHub security advisory](https://github.com/security/advisories/new) on this repository.
+Open a [private GitHub security advisory](https://github.com/victor-salles/bitesize/security/advisories/new) on this repository.
 Do not open public issues for undisclosed vulnerabilities.
 
 ## Known sensitive surfaces

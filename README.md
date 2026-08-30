@@ -197,6 +197,8 @@ Enable Gmail or Calendar under **Integrations** in the dashboard (or set `integr
 
 BiteSIze is MIT-licensed. See [LICENSE](LICENSE), [SECURITY.md](SECURITY.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), and [CONTRIBUTING.md](CONTRIBUTING.md).
 
+Repo: [github.com/victor-salles/bitesize](https://github.com/victor-salles/bitesize).
+
 **Before your first run:** copy `.env.example` → `.env`, run `python dashboard.py` to configure settings, or let the CLI migrate from `.env`/`sources.json` once.
 
 **Security notes:**
