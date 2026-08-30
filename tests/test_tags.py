@@ -21,10 +21,11 @@ def test_infer_tipo_short_body_is_resumo():
 
 
 def test_infer_tipo_subscribe_language_is_resumo():
-    art = {
-        "title": "Matéria premium",
-        "content": LONG_BODY + " Assine para continuar lendo o restante.",
-    }
+    body = (
+        "O governo anunciou medidas econômicas. Analistas avaliam o impacto. "
+        "Assine para continuar lendo o restante."
+    )
+    art = {"title": "Matéria premium", "content": body}
     assert infer_tipo(art) == "resumo"
 
 
@@ -62,6 +63,42 @@ def test_normalize_tags_deduplicates_temas():
 def test_infer_tipo_long_unique_body_is_artigo_completo():
     art = {"title": "Análise econômica", "content": LONG_BODY}
     assert infer_tipo(art) == "artigo-completo"
+
+
+def test_infer_tipo_subscribers_in_long_body_is_artigo_completo():
+    art = {
+        "title": "Newsletter boom",
+        "content": LONG_BODY + " Millions of subscribers read daily updates.",
+    }
+    assert infer_tipo(art) == "artigo-completo"
+
+
+def test_infer_tipo_leia_mais_in_long_body_is_artigo_completo():
+    art = {
+        "title": "Cobertura completa",
+        "content": LONG_BODY + " LEIA MAIS: veja também nossa análise sobre juros.",
+    }
+    assert infer_tipo(art) == "artigo-completo"
+
+
+def test_infer_tipo_long_body_matching_rss_snippet_is_artigo_completo():
+    rss = LONG_BODY + " " + LONG_BODY
+    art = {
+        "title": "Análise econômica",
+        "content": rss,
+        "rss_snippet": rss,
+    }
+    assert infer_tipo(art) == "artigo-completo"
+
+
+def test_infer_tipo_short_body_matching_rss_snippet_is_resumo():
+    rss = "Teaser curto sobre a economia desta semana."
+    art = {
+        "title": "Economia",
+        "content": rss,
+        "rss_snippet": rss,
+    }
+    assert infer_tipo(art) == "resumo"
 
 
 def test_normalize_tags_drops_unknown_tema():

@@ -22,7 +22,8 @@ from ai_locale import epub_label, format_digest_timestamp
 from config import console, get_settings, load_env, OUTPUT_DIR
 from feed import fetch_feed, fetch_article_content, filter_headline_only
 from paywall import log_summary, reset_stats
-from gemini import process_articles, generate_section_cover, generate_global_cover, article_relevance
+from gemini import process_articles, generate_section_cover, generate_global_cover
+from magazine_layers import article_rank_sort_key
 from epub import generate_epub
 from books import copy_to_icloud_books
 from kindle import send_to_kindle
@@ -229,9 +230,7 @@ def main() -> None:
 
         # Highest relevance first within each section (Kindle spine + indexes follow this order).
         for cat in processed_sections:
-            processed_sections[cat].sort(
-                key=lambda a: (-article_relevance(a), (a.get("title") or "").lower()),
-            )
+            processed_sections[cat].sort(key=article_rank_sort_key)
 
         total_filtered = total_raw - len(kept_flat)
         console.print(

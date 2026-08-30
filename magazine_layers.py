@@ -41,6 +41,11 @@ def _cover_sort_key(relevance: int, cat: str, art: dict) -> tuple:
     return (ai_first, -relevance, (cat or "").lower(), _norm(art.get("title")))
 
 
+def article_rank_sort_key(art: dict) -> tuple:
+    """Shared sort key for section order and cover picks."""
+    return _cover_sort_key(article_relevance(art), "", art)
+
+
 def find_hero_article(
     sections: dict[str, list[dict]],
     global_cover: dict | None,
@@ -69,7 +74,7 @@ def find_hero_article(
 
 def lead_for_section(articles: list[dict], hero: dict | None) -> dict | None:
     """Section-front lead: top story in this desk that is not the edition hero."""
-    for art in articles or []:
+    for art in sorted(articles or [], key=article_rank_sort_key):
         if hero and is_same_story(art, hero):
             continue
         return art

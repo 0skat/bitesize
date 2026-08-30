@@ -8,8 +8,6 @@ from ai import call as _call_ai, available as _ai_available
 from tags import TEMAS, normalize_tags
 
 CLUSTERED_AI_SCORE_RATIO = 0.35
-LISTWISE_SCORE_HIGH = 92
-LISTWISE_SCORE_LOW = 40
 
 
 def _extract_json(response: str, label: str = ""):
@@ -70,14 +68,43 @@ def _fallback_relevance(art: dict) -> int:
     return 30 + min(28, n * 28 // 8000)
 
 
-def _relevance_from_listwise_rank(rank: int, n: int) -> int:
-    """Map 1-based listwise rank (1 = most important) to 0–100."""
+def _relevance_from_listwise_rank(rank: int, n: int, *, high: int, low: int) -> int:
+    """Map 1-based listwise rank (1 = most important) across a score span."""
     if n <= 0:
         return 50
     if n == 1:
-        return LISTWISE_SCORE_HIGH
-    span = LISTWISE_SCORE_HIGH - LISTWISE_SCORE_LOW
-    return LISTWISE_SCORE_HIGH - (rank - 1) * span // (n - 1)
+        return high
+    span = high - low
+    return high - (rank - 1) * span // (n - 1)
+
+
+def _listwise_remap_bounds(ai_articles: list[dict]) -> tuple[int, int]:
+    """Score span for listwise remap: batch min/max, spread downward when tied."""
+    scores = [a["relevance"] for a in ai_articles]
+    high = max(scores)
+    low = min(scores)
+    n = len(ai_articles)
+    if n > 1 and high == low:
+        low = max(0, high - (n - 1))
+    return high, low
+
+
+def _listwise_cluster_log_line(
+    ai_articles: list[dict],
+    *,
+    order: list[int] | None,
+    empty_response: bool = False,
+) -> str:
+    """One-line status for clustered listwise pass (testable without Rich)."""
+    n = len(ai_articles)
+    unique = len({a["relevance"] for a in ai_articles})
+    ratio = unique / n if n else 0.0
+    ratio_text = f"ratio={ratio:.2f}"
+    if empty_response:
+        return f"listwise skipped-empty {ratio_text}"
+    if order is None:
+        return f"listwise skipped-invalid {ratio_text}"
+    return f"listwise fired {ratio_text}"
 
 
 def _assign_fallback_relevance(art: dict) -> None:
@@ -140,13 +167,19 @@ def _maybe_remap_clustered_batch(batch_results: list[dict]) -> None:
 
     response = _call_ai(_listwise_rank_instruction(n), title_block, label="listwise-rank")
     if not response:
+        console.print(f"  [dim]{_listwise_cluster_log_line(ai_articles, order=None, empty_response=True)}[/dim]")
         return
     order = _parse_listwise_order(response, n)
     if order is None:
+        console.print(f"  [dim]{_listwise_cluster_log_line(ai_articles, order=None)}[/dim]")
         return
 
+    high, low = _listwise_remap_bounds(ai_articles)
     for rank, local_i in enumerate(order, start=1):
-        ai_articles[local_i]["relevance"] = _relevance_from_listwise_rank(rank, n)
+        ai_articles[local_i]["relevance"] = _relevance_from_listwise_rank(
+            rank, n, high=high, low=low,
+        )
+    console.print(f"  [dim]{_listwise_cluster_log_line(ai_articles, order=order)}[/dim]")
 
 
 def spread_tied_scores(articles: list[dict]) -> list[dict]:

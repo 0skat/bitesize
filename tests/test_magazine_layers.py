@@ -1,7 +1,9 @@
 from magazine_layers import (
+    article_rank_sort_key,
     cover_teasers,
     find_hero_article,
     is_same_story,
+    lead_for_section,
     ranked_excluding_hero,
 )
 
@@ -62,6 +64,40 @@ def test_find_hero_article_prefers_ai_over_higher_fallback():
     }
     hero, _cat = find_hero_article(sections, None)
     assert hero["title"] == "AI modest"
+
+
+def test_lead_for_section_prefers_ai_over_higher_fallback():
+    articles = [
+        {
+            "title": "Fallback long",
+            "url": "https://f",
+            "relevance": 69,
+            "relevance_source": "fallback",
+            "content": "x" * 4000,
+        },
+        {
+            "title": "AI modest",
+            "url": "https://a",
+            "relevance": 45,
+            "relevance_source": "ai",
+        },
+    ]
+    lead = lead_for_section(articles, hero=None)
+    assert lead["title"] == "AI modest"
+
+
+def test_article_rank_sort_key_prefers_ai_over_higher_fallback():
+    fallback = {
+        "title": "Fallback long",
+        "relevance": 69,
+        "relevance_source": "fallback",
+    }
+    ai = {
+        "title": "AI modest",
+        "relevance": 45,
+        "relevance_source": "ai",
+    }
+    assert article_rank_sort_key(ai) < article_rank_sort_key(fallback)
 
 
 def test_ranked_excluding_hero_prefers_ai_over_higher_fallback():

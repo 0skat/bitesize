@@ -23,15 +23,22 @@ TEMAS = frozenset({
     "clima",
 })
 
+# Paywall/snippet heuristics apply only to bodies no longer than this multiple of min_body_chars.
+TIPO_SHORT_BODY_MULTIPLIER = 2
+
 _SUBSCRIBE_RE = re.compile(
-    r"assine|subscribe|paywall|continue\s+reading|continue\s+lendo|"
-    r"leia\s+mais|cadastre-se",
+    r"\bassine\b|\bsubscribe\b|\bpaywall\b|"
+    r"\bcontinue\s+reading\b|\bcontinue\s+lendo\b|\bcadastre-se\b",
     re.IGNORECASE,
 )
 
 
 def _normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").strip().lower())
+
+
+def _snippet_echo_max_chars() -> int:
+    return get_settings().min_body_chars * TIPO_SHORT_BODY_MULTIPLIER
 
 
 def _texts_nearly_equal(a: str, b: str) -> bool:
@@ -56,12 +63,15 @@ def _texts_nearly_equal(a: str, b: str) -> bool:
 
 
 def _body_matches_snippet(body: str, art: dict) -> bool:
-    """True when body echoes the title or the stored RSS description.
+    """True when a short body echoes the title or the stored RSS description.
 
     RSS text lives in ``rss_snippet`` (set at feed fetch). Before full-text
     replace, ``content`` is the same string; after replace, only ``rss_snippet``
     keeps the original feed description for comparison.
     """
+    if len(body) > _snippet_echo_max_chars():
+        return False
+
     title = (art.get("title") or "").strip()
     rss = (art.get("rss_snippet") or "").strip()
 
@@ -85,7 +95,7 @@ def infer_tipo(art: dict) -> str:
     if _body_matches_snippet(body, art):
         return "resumo"
 
-    if _SUBSCRIBE_RE.search(body):
+    if len(body) <= _snippet_echo_max_chars() and _SUBSCRIBE_RE.search(body):
         return "resumo"
 
     return "artigo-completo"
