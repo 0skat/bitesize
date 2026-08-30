@@ -1,7 +1,7 @@
 from unittest.mock import patch
 
 import gemini
-from ai_locale import format_tag_line
+from ai_locale import epub_label, format_tag_line
 from epub import _article_body_html
 from tags import TEMAS, TIPOS, infer_tipo, normalize_tags
 
@@ -34,6 +34,29 @@ def test_infer_tipo_title_snippet_is_resumo():
         "content": "Economia cresce no terceiro trimestre",
     }
     assert infer_tipo(art) == "resumo"
+
+
+def test_infer_tipo_rss_snippet_echo_is_resumo():
+    rss = (
+        "O Banco Central manteve a taxa Selic em 10,75% ao ano na reunião desta "
+        "quarta-feira. A decisão era esperada pelo mercado e reflete o cenário "
+        "de inflação ainda acima da meta estabelecida pelo Conselho Monetário."
+    )
+    art = {
+        "title": "BC mantém Selic",
+        "content": rss,
+        "rss_snippet": rss,
+    }
+    assert infer_tipo(art) == "resumo"
+
+
+def test_normalize_tags_deduplicates_temas():
+    art = {"title": "T", "content": "Short"}
+    normalize_tags(
+        art,
+        {"tipo": "resumo", "temas": ["política", "economia", "política", "economia"]},
+    )
+    assert art["temas"] == ["política", "economia"]
 
 
 def test_infer_tipo_long_unique_body_is_artigo_completo():
@@ -122,3 +145,26 @@ def test_epub_includes_tag_line(isolated_store, monkeypatch):
     html = _article_body_html(art)
     assert "Artigo completo" in html
     assert "política" in html
+
+
+def test_epub_tag_line_without_summary(isolated_store, monkeypatch):
+    import config
+    import settings_store as store
+
+    store.init_db()
+    store.set_setting("ai_language", "pt-BR")
+    monkeypatch.setattr(config, "_settings", None)
+
+    art = {
+        "title": "Story",
+        "content": "Teaser only.",
+        "summary": "",
+        "relevance": 50,
+        "tipo": "resumo",
+        "temas": ["economia"],
+    }
+    html = _article_body_html(art)
+    assert "Resumo" in html
+    assert "economia" in html
+    assert "summary-label" not in html
+    assert epub_label("relevance_score") not in html

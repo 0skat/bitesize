@@ -34,29 +34,44 @@ def _normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").strip().lower())
 
 
-def _body_matches_snippet(body: str, art: dict) -> bool:
-    """True when body is nearly the same as the title/RSS snippet."""
-    title = (art.get("title") or "").strip()
-    if not body or not title:
+def _texts_nearly_equal(a: str, b: str) -> bool:
+    """True when two strings are the same teaser (exact, substring, or ≥92% similar)."""
+    a_norm = _normalize_text(a)
+    b_norm = _normalize_text(b)
+    if not a_norm or not b_norm:
         return False
 
-    body_norm = _normalize_text(body)
-    title_norm = _normalize_text(title)
-    if not body_norm or not title_norm:
-        return False
-
-    if body_norm == title_norm:
+    if a_norm == b_norm:
         return True
 
-    if len(body) < 80 and body_norm in title_norm:
+    if len(a) < 80 and a_norm in b_norm:
         return True
 
-    if len(title) < 80 and title_norm in body_norm:
-        extra = len(body_norm) - len(title_norm)
+    if len(b) < 80 and b_norm in a_norm:
+        extra = len(a_norm) - len(b_norm) if len(a_norm) >= len(b_norm) else len(b_norm) - len(a_norm)
         if extra <= 30:
             return True
 
-    return SequenceMatcher(None, body_norm, title_norm).ratio() >= 0.92
+    return SequenceMatcher(None, a_norm, b_norm).ratio() >= 0.92
+
+
+def _body_matches_snippet(body: str, art: dict) -> bool:
+    """True when body echoes the title or the stored RSS description.
+
+    RSS text lives in ``rss_snippet`` (set at feed fetch). Before full-text
+    replace, ``content`` is the same string; after replace, only ``rss_snippet``
+    keeps the original feed description for comparison.
+    """
+    title = (art.get("title") or "").strip()
+    rss = (art.get("rss_snippet") or "").strip()
+
+    if title and _texts_nearly_equal(body, title):
+        return True
+
+    if rss and _texts_nearly_equal(body, rss):
+        return True
+
+    return False
 
 
 def infer_tipo(art: dict) -> str:
@@ -90,7 +105,11 @@ def normalize_tags(art: dict, ai_item: dict | None = None) -> dict:
     if ai_item and "temas" in ai_item:
         raw_temas = ai_item.get("temas")
         if isinstance(raw_temas, list):
-            temas = [t for t in raw_temas if t in TEMAS]
+            seen: set[str] = set()
+            for t in raw_temas:
+                if t in TEMAS and t not in seen:
+                    seen.add(t)
+                    temas.append(t)
 
     art["tipo"] = tipo
     art["temas"] = temas

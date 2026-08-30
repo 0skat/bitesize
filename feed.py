@@ -149,6 +149,7 @@ def fetch_feed(
                     "category":  "",   # set by caller after fetch
                     "title":     title,
                     "content":   content_clean,
+                    "rss_snippet": content_clean,
                     "url":       link,
                     "published": published,
                     "published_ts": published_ts,

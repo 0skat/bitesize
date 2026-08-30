@@ -190,6 +190,8 @@ def main() -> None:
                     art = future_to_art[fut]
                     content = fut.result()
                     if content:
+                        if not art.get("rss_snippet"):
+                            art["rss_snippet"] = art.get("content", "")
                         art["content"] = content
                         fetched += 1
                     prog.advance(task)

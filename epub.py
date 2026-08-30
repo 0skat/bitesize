@@ -532,11 +532,12 @@ def _article_body_html(art: dict) -> str:
     summary = (art.get("summary") or "").strip()
     parts: list[str] = []
 
+    tag_line = ""
+    if art.get("tipo"):
+        tag_line = format_tag_line(art["tipo"], art.get("temas") or [])
+
     if summary:
         rel = relevance_display(art)
-        tag_line = ""
-        if art.get("tipo"):
-            tag_line = format_tag_line(art["tipo"], art.get("temas") or [])
         parts.append(
             f'<div class="summary">'
             f'<p class="summary-label">{_e(epub_label("summary"))}</p>'
@@ -545,6 +546,12 @@ def _article_body_html(art: dict) -> str:
         if tag_line:
             parts.append(f'<p class="summary-meta-line">{_e(tag_line)}</p>')
         parts.append(f"<p>{_e(summary)}</p>" f"</div>")
+    elif tag_line:
+        parts.append(
+            f'<div class="summary">'
+            f'<p class="summary-meta-line">{_e(tag_line)}</p>'
+            f"</div>"
+        )
 
     if len(body) >= get_settings().min_body_chars:
         parts.append(f'<div class="article-body">{_body_paragraphs(body)}</div>')
