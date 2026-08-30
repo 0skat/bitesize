@@ -104,6 +104,46 @@ def test_resolve_dashboard_token_from_file(tmp_path, monkeypatch):
     assert dashboard._resolve_dashboard_token() == "file-token"
 
 
+def test_preview_returns_headlines(client, monkeypatch):
+    auth = {"Authorization": "Bearer test-token"}
+    r = client.post("/api/categories", json={"name": "Brazil"}, headers=auth)
+    cat_id = r.get_json()["id"]
+    client.post(
+        "/api/feeds",
+        json={
+            "category_id": cat_id,
+            "name": "Veja",
+            "url": "https://veja.abril.com.br/feed/",
+        },
+        headers=auth,
+    )
+
+    def fake_preview(sources, fetch_fn=None, max_headlines=5):
+        assert max_headlines == 5
+        return {
+            "categories": [
+                {
+                    "id": cat_id,
+                    "name": "Brazil",
+                    "feeds": [
+                        {
+                            "id": 1,
+                            "name": "Veja",
+                            "enabled": True,
+                            "headlines": [{"title": "Capa", "url": "https://x", "published": "09:00"}],
+                            "error": "",
+                        }
+                    ],
+                }
+            ]
+        }
+
+    monkeypatch.setattr(dashboard, "build_source_preview", fake_preview)
+    r = client.get("/api/preview")
+    assert r.status_code == 200
+    assert r.get_json()["categories"][0]["feeds"][0]["headlines"][0]["title"] == "Capa"
+
+
 def test_put_settings_skips_blank_smtp_password(client):
     store.set_setting("smtp_password", "keep-me")
     r = client.put(

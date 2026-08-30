@@ -257,12 +257,18 @@ async function refreshSources() {
   renderSources(data);
 }
 
+let previewLoaded = false;
+
 $$(".tab").forEach((btn) => {
   btn.addEventListener("click", () => {
     $$(".tab").forEach((b) => b.classList.remove("active"));
     $$(".panel").forEach((p) => p.classList.remove("active"));
     btn.classList.add("active");
     $(`#panel-${btn.dataset.tab}`).classList.add("active");
+    if (btn.dataset.tab === "preview" && !previewLoaded) {
+      previewLoaded = true;
+      loadPreview();
+    }
   });
 });
 
@@ -293,6 +299,104 @@ $("#add-category").onclick = async () => {
   $("#new-category-name").value = "";
   await refreshSources();
 };
+
+async function loadPreview() {
+  const status = $("#preview-status");
+  const root = $("#preview-list");
+  setStatus(status, "Fetching headlines…", true);
+  root.innerHTML = "";
+  try {
+    const data = await api("/api/preview?max=5");
+    renderPreview(data);
+    setStatus(status, "Headlines loaded. Use Include to keep or drop a source.", true);
+  } catch (e) {
+    setStatus(status, e.message, false);
+  }
+}
+
+function renderPreview(data) {
+  const root = $("#preview-list");
+  root.innerHTML = "";
+  for (const cat of data.categories || []) {
+    const card = document.createElement("div");
+    card.className = "card";
+    const h = document.createElement("h2");
+    h.textContent = cat.name;
+    card.appendChild(h);
+    for (const feed of cat.feeds || []) {
+      const block = document.createElement("div");
+      block.className = "preview-feed";
+      const header = document.createElement("div");
+      header.className = "preview-feed-header";
+      const title = document.createElement("strong");
+      title.textContent = feed.name;
+      const toggle = document.createElement("label");
+      toggle.className = "preview-toggle";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = !!feed.enabled;
+      cb.onchange = async () => {
+        try {
+          await api(`/api/feeds/${feed.id}`, {
+            method: "PUT",
+            body: JSON.stringify({ enabled: cb.checked }),
+          });
+          setStatus(
+            $("#preview-status"),
+            cb.checked ? `${feed.name} included.` : `${feed.name} removed from the digest.`,
+            true,
+          );
+        } catch (e) {
+          cb.checked = !cb.checked;
+          setStatus($("#preview-status"), e.message, false);
+        }
+      };
+      toggle.append(cb, document.createTextNode(" Include in digest"));
+      header.append(title, toggle);
+      block.appendChild(header);
+      if (feed.error) {
+        const err = document.createElement("p");
+        err.className = "preview-error";
+        err.textContent = feed.error;
+        block.appendChild(err);
+      }
+      const list = document.createElement("ol");
+      list.className = "preview-headlines";
+      for (const item of feed.headlines || []) {
+        const li = document.createElement("li");
+        if (item.url) {
+          const a = document.createElement("a");
+          a.href = item.url;
+          a.target = "_blank";
+          a.rel = "noopener";
+          a.textContent = item.title;
+          li.appendChild(a);
+        } else {
+          li.textContent = item.title;
+        }
+        if (item.published) {
+          const t = document.createElement("span");
+          t.className = "preview-time";
+          t.textContent = item.published;
+          li.append(" ", t);
+        }
+        list.appendChild(li);
+      }
+      if (!feed.headlines?.length && !feed.error) {
+        const empty = document.createElement("p");
+        empty.className = "preview-empty";
+        empty.textContent = "No headlines returned.";
+        block.appendChild(empty);
+      } else {
+        block.appendChild(list);
+      }
+      card.appendChild(block);
+    }
+    root.appendChild(card);
+  }
+}
+
+$("#refresh-preview").onclick = loadPreview;
 
 loadSettings().then(refreshSources).catch((e) => {
   setStatus($("#settings-status"), e.message, false);

@@ -52,18 +52,50 @@ def _normalize_relevance(raw) -> int:
 
 
 def _fallback_relevance(art: dict) -> int:
-    """When the model omits a score, prefer longer readable extracts."""
+    """Weak stand-in when the model omits a score.
+
+    Length is not importance. Keep the value below 70 so fallbacks cannot
+    occupy the top of the book, and use a continuous map so long articles
+    do not all land on 78 / 70 / 62.
+    """
     body = (art.get("content") or "").strip()
     n = len(body)
-    if n >= 3500:
-        return 78
-    if n >= 2000:
-        return 70
-    if n >= get_settings().min_body_chars:
-        return 62
-    if n > 120:
-        return 48
-    return 40
+    if n <= 0:
+        return 30
+    return 30 + min(28, n * 28 // 8000)
+
+
+def spread_tied_scores(articles: list[dict]) -> list[dict]:
+    """Give unique scores inside a tied group, newest first, without reordering groups."""
+    from collections import defaultdict
+
+    groups: dict[int, list[int]] = defaultdict(list)
+    for i, art in enumerate(articles):
+        groups[article_relevance(art)].append(i)
+
+    unique_scores = sorted(groups.keys(), reverse=True)
+    for idx, score in enumerate(unique_scores):
+        members = groups[score]
+        if len(members) < 2:
+            continue
+        next_score = unique_scores[idx + 1] if idx + 1 < len(unique_scores) else None
+        floor = (next_score + 1) if next_score is not None else max(0, score - len(members) + 1)
+        room = max(1, score - floor + 1)
+        members_sorted = sorted(
+            members,
+            key=lambda i: (
+                -int(articles[i].get("published_ts") or 0),
+                (articles[i].get("title") or "").lower(),
+            ),
+        )
+        n = len(members_sorted)
+        for rank, i in enumerate(members_sorted):
+            if room >= n:
+                articles[i]["relevance"] = score - rank
+            else:
+                step = (room - 1) / max(n - 1, 1)
+                articles[i]["relevance"] = score - int(round(rank * step))
+    return articles
 
 
 def process_articles(articles: list[dict], batch_size: int | None = None) -> list[dict]:
@@ -87,7 +119,7 @@ def process_articles(articles: list[dict], batch_size: int | None = None) -> lis
             a = art.copy()
             a["relevance"] = _fallback_relevance(a)
             out.append(a)
-        return out
+        return spread_tied_scores(out)
 
     processed: list[dict] = []
 
@@ -108,9 +140,10 @@ def process_articles(articles: list[dict], batch_size: int | None = None) -> lis
             "Rules: skip=true ONLY for pure advertisements or sponsored/promotional content; "
             "real news is never skipped regardless of topic. "
             "summary: exactly 2 factual sentences, no editorialising, no filler phrases. "
-            "relevance: integer 0–100 for how important this story is to a well-informed reader today "
-            "(consider impact, timeliness, breadth of audience, and how central the topic is vs niche); "
-            "use the full scale — not every item should be 80+."
+            "relevance: integer 0–100 comparing this story to the others in THIS batch "
+            "(impact, timeliness, breadth of audience, central vs niche). "
+            "Use the full scale: at most one in five items above 80, at least one in five below 45. "
+            "Do not give several stories the same number."
             + ai_output_language_rule()
         )
 
@@ -154,7 +187,7 @@ def process_articles(articles: list[dict], batch_size: int | None = None) -> lis
                 a["relevance"] = _fallback_relevance(a)
             processed.append(a)
 
-    return processed
+    return spread_tied_scores(processed)
 
 
 def generate_section_cover(category: str, articles: list[dict]) -> dict:

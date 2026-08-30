@@ -137,9 +137,11 @@ def fetch_feed(
             content_clean = clean_html(content)
 
             published = ""
+            published_ts = 0
             if getattr(entry, "published_parsed", None):
                 dt = datetime(*entry.published_parsed[:6])
                 published = dt.strftime("%H:%M")
+                published_ts = int(dt.timestamp())
 
             if title:
                 articles.append({
@@ -149,6 +151,7 @@ def fetch_feed(
                     "content":   content_clean,
                     "url":       link,
                     "published": published,
+                    "published_ts": published_ts,
                     "summary":   "",
                 })
         return articles

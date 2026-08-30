@@ -19,6 +19,7 @@
   <nav class="tabs">
     <button class="tab active" data-tab="settings">Settings</button>
     <button class="tab" data-tab="sources">Sources</button>
+    <button class="tab" data-tab="preview">Preview</button>
     <button class="tab" data-tab="kindle">Kindle</button>
   </nav>
 
@@ -38,6 +39,15 @@
       <p id="sources-status" class="status"></p>
     </section>
 
+    <section id="panel-preview" class="panel">
+      <p class="preview-intro">Latest headlines from each source. Turn a source off if the mix is not worth keeping.</p>
+      <div class="toolbar">
+        <button id="refresh-preview" class="primary">Load headlines</button>
+      </div>
+      <p id="preview-status" class="status"></p>
+      <div id="preview-list"></div>
+    </section>
+
     <section id="panel-kindle" class="panel">
       <div id="kindle-fields" class="card"></div>
       <div class="actions">
@@ -49,7 +59,7 @@
   </main>
 
   <footer>
-    <p>Backlog: content preview, AI summary preview, magazine covers</p>
+    <p>Backlog: AI summary preview, magazine covers</p>
   </footer>
 
   <script src="/app.js"></script>

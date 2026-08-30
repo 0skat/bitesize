@@ -11,6 +11,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import settings_store as store
 from config import BASE_DIR, load_env, reload_settings
 from kindle import send_test_email
+from preview import build_source_preview
 
 load_env()
 
@@ -85,6 +86,18 @@ def put_settings_api():
 @app.get("/api/sources")
 def get_sources_api():
     return jsonify(store.load_sources_for_api())
+
+
+@app.get("/api/preview")
+def get_preview_api():
+    max_headlines = request.args.get("max", default=5, type=int)
+    max_headlines = max(1, min(int(max_headlines or 5), 12))
+    return jsonify(
+        build_source_preview(
+            store.load_sources_for_api(),
+            max_headlines=max_headlines,
+        )
+    )
 
 
 @app.post("/api/categories")
