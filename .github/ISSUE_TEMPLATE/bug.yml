@@ -1,0 +1,31 @@
+name: Bug
+description: Something in the digest, dashboard, or delivery is wrong
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is a **single-user local tool**. Do not paste `.env`, SMTP passwords, `data/bitesize.db`, or dashboard tokens.
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: input
+    id: command
+    attributes:
+      label: Command
+      placeholder: python main.py --all --no-kindle --no-books
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs (redact secrets)
+      render: text

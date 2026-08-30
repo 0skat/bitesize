@@ -1,0 +1,20 @@
+name: Feature
+description: A change you want in the digest or dashboard
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like to see?
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: Check [ROADMAP.md](https://github.com/victor-salles/bitesize/blob/main/ROADMAP.md) before proposing work that is already listed.

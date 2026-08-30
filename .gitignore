@@ -15,5 +15,9 @@ wordflow/.next/
 **/.DS_Store
 .claude/
 wordflow/.env.local
+wordflow/tsconfig.tsbuildinfo
+.coverage
+htmlcov/
+coverage.xml
 .cursor-worker.log
 MOBILE_HANDOFF.local.md

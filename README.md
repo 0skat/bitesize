@@ -6,7 +6,7 @@ AI-powered personal news digest that fetches RSS feeds (and optional Gmail/Calen
 |-----|-----|
 | [CLAUDE.md](CLAUDE.md) | Agents working in this repo |
 | [ROADMAP.md](ROADMAP.md) | What is shipped vs what comes next |
-| [ISSUES.md](ISSUES.md) | Known problems (this repo has no GitHub issues yet) |
+| [ISSUES.md](ISSUES.md) | Known problems (GitHub Issues after the repo is public) |
 | [docs/LOCAL_DEV.md](docs/LOCAL_DEV.md) | Dev commands and tests |
 
 ## What it does
@@ -99,6 +99,8 @@ Edit `.env` or the dashboard with your `@kindle.com` address and Gmail SMTP cred
 4. Whitelist `SMTP_USER` in Amazon Kindle → Personal Document Settings → Approved senders.
 
 Skip delivery with `--no-kindle`.
+
+Amazon does **not** auto-delete old Send-to-Kindle personal documents. Each morning’s file has a new name, so it stacks in your library. Periodically delete old “Resumo de Notícias” docs in [Manage Your Content and Devices](https://www.amazon.com/mycd) (filter **Docs**), then sync the Kindle. Details: [docs/research/2026-08-30-kindle-auto-delete.md](docs/research/2026-08-30-kindle-auto-delete.md).
 
 ### 5. iCloud Books (optional)
 
@@ -193,7 +195,7 @@ Enable Gmail or Calendar under **Integrations** in the dashboard (or set `integr
 
 ## Open source
 
-BiteSIze is MIT-licensed. See [LICENSE](LICENSE), [SECURITY.md](SECURITY.md), and [CONTRIBUTING.md](CONTRIBUTING.md).
+BiteSIze is MIT-licensed. See [LICENSE](LICENSE), [SECURITY.md](SECURITY.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), and [CONTRIBUTING.md](CONTRIBUTING.md).
 
 **Before your first run:** copy `.env.example` → `.env`, run `python dashboard.py` to configure settings, or let the CLI migrate from `.env`/`sources.json` once.
 
@@ -208,7 +210,8 @@ BiteSIze is MIT-licensed. See [LICENSE](LICENSE), [SECURITY.md](SECURITY.md), an
 
 - [ ] No `.env`, `data/`, `token.json`, or `credentials.json` in git
 - [ ] PII scan clean on tracked files (`rg -i 'your-email|/Users/you' --glob '!data/**'`)
-- [ ] `pytest tests/ -v` passes
+- [ ] `pytest tests/ -v --cov` passes (CI gate is 45% line coverage; Gmail/Calendar/CLI are mostly untested)
 - [ ] `pip-audit -r requirements.txt` clean or documented exceptions
 - [ ] LICENSE + SECURITY.md present
 - [ ] GitHub repo set to public with security advisories enabled
+- [ ] Dependabot alerts on; first CI run green (pytest + coverage + pip-audit + gitleaks)

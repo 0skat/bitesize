@@ -12,10 +12,11 @@ Thanks for your interest in BiteSIze!
 ## Running tests
 
 ```bash
-pytest tests/ -v
+pip install -r requirements-dev.txt
+pytest tests/ -v --cov
 ```
 
-Add or update tests when changing behavior.
+Add or update tests when changing behavior. CI runs the suite plus coverage, `pip-audit`, and gitleaks.
 
 ## Pull requests
 

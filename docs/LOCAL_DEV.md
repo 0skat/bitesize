@@ -23,8 +23,8 @@ Open http://127.0.0.1:8765 — settings are stored in `data/bitesize.db` (gitign
 ## Tests
 
 ```bash
-pip install -r requirements-dev.txt   # includes readability-lxml for reader_extract tests
-pytest tests/ -v
+pip install -r requirements-dev.txt   # readability-lxml + pytest-cov + pip-audit
+pytest tests/ -v --cov
 ```
 
 ## Wordflow (experimental)
