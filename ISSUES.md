@@ -40,6 +40,17 @@ This matches the documented single-user threat model. It is still an issue if th
 **Expected:** The running digest is the published default branch.  
 **Actual:** `main` is still the empty init commit. Everything useful lives on `chore/land-session-work`. `git remote` is empty. A new clone would not get the app.
 
+## Relevance scores pile up in the same edition
+
+**Expected:** Stories in one digest have a useful spread, so “top stories” are actually the most important ones.  
+**Actual:** In the 30 August 2026 book, the most common on-page scores are **7.8, 7.0, and 6.2** — exactly the fallback buckets (78 / 70 / 62) used when the AI omits a score or the batch fails. Thirty-three items sat at 7.8. Sort then falls back to title A–Z among long articles.
+
+Hypothesis (confirmed in code): `_fallback_relevance` mapped body length to five fixed numbers. After a full-text fetch, most articles are long, so they share one of those three values. Antigravity flakes (see above) make this the common path. The AI prompt asked for the full 0–100 scale, but failed batches never reached it.
+
+**Tried:** (1) keep the five buckets and only change the prompt — still piles when AI fails; (2) stretch every edition onto 0–100 — exaggerates noise; (3) cap fallback below 70, score length continuously, break remaining ties by recency, and ask the model to compare inside the batch.
+
+**Landed:** option 3. Next morning digest should no longer show a wall of 7.8s. Keep this open until that run confirms it.
+
 ## Closed here on purpose (do not re-open from old plans)
 
 These were open in `docs/superpowers/plans/2026-05-26-open-source-security-readiness.md`. The code has moved on:

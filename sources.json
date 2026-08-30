@@ -4,7 +4,8 @@
       "G1 - Globo":       "https://g1.globo.com/dynamo/rss2.xml",
       "Folha de S.Paulo": "https://feeds.folha.uol.com.br/emcimadahora/rss091.xml",
       "Agência Brasil":   "https://agenciabrasil.ebc.com.br/rss/ultimasnoticias/feed.xml",
-      "UOL Notícias":     "https://rss.uol.com.br/feed/noticias.xml"
+      "UOL Notícias":     "https://rss.uol.com.br/feed/noticias.xml",
+      "Veja":             "https://veja.abril.com.br/feed/"
     },
     "Tech": {
       "The Verge":     "https://www.theverge.com/rss/index.xml",
