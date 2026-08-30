@@ -1,4 +1,4 @@
-feedparser>=6.0
+feedparser>=6.0.14
 questionary>=2.0
 beautifulsoup4>=4.12
 lxml>=5.0
