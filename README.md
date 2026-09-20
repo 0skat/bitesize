@@ -1,219 +1,186 @@
-# BiteSIze
+<h1 align="center">BiteSIze</h1>
+<p align="center">
+  <strong>A local morning magazine.</strong> RSS in, Kindle EPUB out.
+</p>
 
-AI-powered personal news digest that fetches RSS feeds (and optional Gmail/Calendar), summarizes articles, builds a magazine-style Kindle EPUB, and delivers it to Kindle and iCloud Books.
+<p align="center">
+  <a href="https://github.com/victor-salles/bitesize/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/victor-salles/bitesize/ci.yml?style=flat-square&label=CI" alt="CI"></a>
+  <img src="https://img.shields.io/badge/Python-3.13-3776ab?style=flat-square&logo=python&logoColor=white" alt="Python 3.13">
+  <img src="https://img.shields.io/badge/Kindle-EPUB-232f3e?style=flat-square" alt="Kindle EPUB">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow?style=flat-square" alt="MIT"></a>
+</p>
 
-| Doc | For |
-|-----|-----|
-| [CLAUDE.md](CLAUDE.md) | Agents working in this repo |
-| [ROADMAP.md](ROADMAP.md) | What is shipped vs what comes next |
-| [ISSUES.md](ISSUES.md) | Known problems (GitHub Issues after the repo is public) |
-| [docs/LOCAL_DEV.md](docs/LOCAL_DEV.md) | Dev commands and tests |
+<p align="center">
+  <a href="#features">Features</a> &nbsp;·&nbsp;
+  <a href="#getting-started">Getting started</a> &nbsp;·&nbsp;
+  <a href="#how-it-works">How it works</a> &nbsp;·&nbsp;
+  <a href="#optional-phases">Optional phases</a> &nbsp;·&nbsp;
+  <a href="#configuration">Configuration</a>
+</p>
 
-## What it does
+BiteSIze runs on one machine. It fetches the feeds you pick, pulls full article text, filters and summarizes with AI, and writes a magazine-style EPUB into `output/`. Kindle email and iCloud Books are extra steps: they fire when they are configured, and they are skipped when they are not.
 
-```
-SQLite sources → fetch RSS (parallel)
-              → full article text (paywall mirrors on failure)
-              → AI batch filter / summarize / score
-              → magazine cover + section layers → EPUB in ./output/
-              → Kindle SMTP (optional) + iCloud Books copy (optional)
-```
+> [!NOTE]
+> This is a **single-user local tool**. The dashboard binds to `127.0.0.1` and is not meant to be exposed. Secrets stay in `.env` and `data/` — never in git.
 
-Optional integrations (off by default — enable in the dashboard):
+## Features
 
-- **Gmail** — recent inbox threads, triaged and summarized
-- **Google Calendar** — upcoming events formatted for reading
+- **Magazine EPUB** — section covers, a global cover, ranked stories, and reflowable HTML that a stock Kindle can open (no in-book JavaScript).
+- **Local dashboard** — settings, RSS sources, live headline Preview, and a **Run digest** button that starts the same job as the morning run.
+- **AI that can be down** — Antigravity (`agy`), Gemini CLI, or Ollama. If none answer, the digest still writes: length-based scores, no summaries.
+- **Optional delivery** — SMTP to `@kindle.com`, copy into iCloud Books. Failures never abort the EPUB.
+- **Optional extra sections** — Gmail threads and Calendar events, off until you turn them on.
+- **Optional Jev triage** — ads, compiled relevance from your ranked themes, `resumo` / `artigo-completo`, and pt-BR temas. Summaries still come from the writing model.
+- **Paywall mirrors** when the first fetch is thin (archive.org is the one that sometimes helps).
+- **pt-BR by default** for the book; dashboard chrome defaults to English.
 
-## Quick start
+## Getting started
 
-### 1. Python environment
+You need [Python 3.13+](https://www.python.org/downloads/) and a terminal. macOS is assumed for iCloud Books and the daily LaunchAgent.
 
 ```bash
-cd bitesize
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
+python dashboard.py          # http://127.0.0.1:8765
 ```
 
-### 2. Settings
+Open the dashboard, add feeds, pick an AI backend, and paste the write-API token from `data/dashboard.token` (created on first run if `DASHBOARD_TOKEN` is unset). GET reads stay open on localhost; saves and **Run digest** need the token.
 
-**Dashboard (recommended)**
+Then build a book:
 
 ```bash
-python dashboard.py
-# → http://127.0.0.1:8765
+python main.py --all                         # all enabled feeds
+python main.py --all --no-kindle --no-books  # EPUB only
+python main.py                               # interactive source pick
 ```
 
-Edit AI backend, RSS sources, Kindle SMTP, language, and delivery flags. On first run, values from `sources.json` and `.env` are imported into `data/bitesize.db`.
+Output lands in `./output/`. With `ai_language=pt-BR` the file is named like `Resumo de Notícias - …`.
 
-Write APIs always need a Bearer token. The dashboard creates one at `data/dashboard.token` if `DASHBOARD_TOKEN` is not set in `.env`. Paste that token into the “Write API token” field (the browser remembers it). GET reads stay open on localhost.
+> [!IMPORTANT]
+> `.env` and `sources.json` **seed** an empty database once. After that, live settings live in `data/bitesize.db`. Change them in the dashboard, not by re-editing `.env`.
 
-### 3. AI backend (pick one)
+### AI backend
 
-Defaults in the database: **Antigravity** (`agy`) with `gemini-3.5-flash-high`, summaries in **pt-BR**. Change the model in the dashboard if you want a different one.
+The database default is **Antigravity** (`agy`) with `gemini-3.8-flash-high`, summaries in **pt-BR**. Switch backend and model in Settings.
 
-**Antigravity (default)**
+| Backend | What you install |
+| --- | --- |
+| Antigravity (default) | `agy` CLI, authenticated |
+| [Ollama](https://ollama.com/) | `ollama pull llama3:8b`, then `AI_BACKEND=ollama` |
+| Gemini CLI | `npm install -g @google/gemini-cli`, then `AI_BACKEND=gemini` |
 
-Requires the `agy` CLI installed and authenticated. Set in the dashboard or `.env`:
+> [!TIP]
+> You can try the pipeline with no AI at all. You will get a ranked EPUB without summaries. Ollama is the no-cloud option once a model is pulled.
 
-```
-AI_BACKEND=antigravity
-ANTIGRAVITY_MODEL=gemini-3.5-flash-high
-AI_LANGUAGE=pt-BR
-```
+## How it works
 
-**Ollama (local)**
+`main.py` is the only orchestrator. The daily job and the dashboard **Run digest** button both call `python main.py --all`.
 
-```bash
-ollama pull llama3:8b
-```
-
-```
-AI_BACKEND=ollama
-OLLAMA_MODEL=llama3:8b
-```
-
-**Gemini CLI**
-
-```bash
-npm install -g @google/gemini-cli
-```
-
-```
-AI_BACKEND=gemini
+```mermaid
+flowchart LR
+  sources[RSS feeds]
+  text[Full article text]
+  ai[Filter summarize score]
+  epub[Magazine EPUB]
+  kindle[Kindle SMTP]
+  books[iCloud Books]
+  sources --> text --> ai --> epub
+  epub --> kindle
+  epub --> books
 ```
 
-If no backend is available, the digest still runs — articles are kept with length-based relevance fallbacks and no AI summaries.
+1. **Fetch** enabled feeds in parallel, then the article bodies. If a body is thin, try archive mirrors.
+2. **Optional Gmail / Calendar** inject extra sections when those flags are on.
+3. **Filter, summarize, score** in batches. Jev can run first when it is enabled and keyed. Headline-only items are dropped.
+4. **Assemble** section covers, a global cover, and magazine layers (hero, teasers, ranked list).
+5. **Write** the EPUB. Then send and copy if those phases are configured.
 
-### 4. Kindle delivery (optional)
+Stories carry a 0–100 relevance score (shown as 0–10 in the book). Sections sort highest-first. Tags on each story: `resumo` or `artigo-completo`, plus temas from a fixed pt-BR list.
 
-Edit `.env` or the dashboard with your `@kindle.com` address and Gmail SMTP credentials.
+Stock Kindle has **no JavaScript**. The book uses internal links, covers, and reflowable HTML only. For a layout closer to e-ink than Apple Books, use [Kindle Previewer 3](https://www.amazon.com/gp/feature.html?docId=1003018611).
 
-**Gmail App Password (required — not your normal Gmail password):**
+## Optional phases
 
-1. Open [Google App Passwords](https://myaccount.google.com/apppasswords) (2-Step Verification must be on).
-2. Create an app password for Mail.
-3. Copy the 16-character password into `.env` or the dashboard.
+Each phase works when its settings are present and is skipped when they are not. Delivery is best-effort.
 
-4. Whitelist `SMTP_USER` in Amazon Kindle → Personal Document Settings → Approved senders.
+### Kindle
 
-Skip delivery with `--no-kindle`.
+Set `KINDLE_EMAIL` (`you@kindle.com`) and Gmail SMTP. Use a [Google App Password](https://myaccount.google.com/apppasswords), not your normal password. Whitelist the sender under Amazon → Personal Document Settings.
 
-Amazon does **not** auto-delete old Send-to-Kindle personal documents. Each morning’s file has a new name, so it stacks in your library. Periodically delete old “Resumo de Notícias” docs in [Manage Your Content and Devices](https://www.amazon.com/mycd) (filter **Docs**), then sync the Kindle. Details: [docs/research/2026-08-30-kindle-auto-delete.md](docs/research/2026-08-30-kindle-auto-delete.md).
+Skip with `--no-kindle` or by turning off Kindle delivery in Settings.
 
-### 5. iCloud Books (optional)
+> [!WARNING]
+> Amazon does not auto-delete Send-to-Kindle personal documents. Each morning’s file has a new name, so the library grows. Periodically delete old digests in [Manage Your Content](https://www.amazon.com/mycd) (filter **Docs**), then sync the device.
 
-When `books_delivery_enabled` is true (default), the EPUB is copied to your Mac iCloud Books folder so it syncs to iPhone/iPad. Skip with `--no-books`.
+### iCloud Books
 
-Typical path: `~/Library/Mobile Documents/iCloud~com~apple~iBooks/Documents` — set `icloud_books_dir` in the dashboard if auto-detection fails.
+On by default. The EPUB is copied into the Mac Books folder so it can sync to iPhone/iPad. Skip with `--no-books`. If auto-detection fails, set `icloud_books_dir` in the dashboard.
 
-### 6. Run
+### Gmail and Calendar
 
-```bash
-# Interactive — pick categories and sources
-python main.py
+Off by default. Enable them under Integrations, with `credentials.json` / `token.json` on the machine. The daily `--all` run honors those flags and does not prompt.
 
-# Non-interactive — all RSS sources
-python main.py --all
+### Jev
 
-# EPUB only (no Kindle, no iCloud Books)
-python main.py --all --no-kindle --no-books
-```
+Off by default. Put a TypeSafe key or a Vercel AI Gateway `vck_…` key in `.env`, then turn on `jev_triage_enabled`. The Jev tab lists each classify run under `output/jev/`. Set `jev_min_keep` (for example `40` on the 0–100 scale) to drop weak stories.
 
-Output lands in `./output/` (filename follows `ai_language`, e.g. `Resumo de Notícias - …` for pt-BR).
-
-### Relevance scores
-
-Each article gets a **0–100** relevance score from the AI (or a length-based fallback). The EPUB **sorts sections highest-first**, shows scores as **0–10** on article pages and top picks, and builds a **“Top stories”** block on the opening page.
-
-### Paywall bypass
-
-When direct article fetch fails or returns too little text, BiteSIze tries archive mirrors (archive.is → 1ft.io → archive.org → removepaywall.com). Success rates are logged to `output/logs/paywall-stats.log` after each run.
-
-### Daily run at 6:50 AM (macOS)
+## Daily run (macOS)
 
 ```bash
 ./scripts/install-daily-launchd.sh
 ```
 
-Runs `.venv/bin/python main.py --all` every day at **06:50** local time (digest ready by ~07:00), emails Kindle when configured, copies to iCloud Books, and logs to `output/logs/digest-stdout.log`.
-
-Uninstall:
+Runs `.venv/bin/python main.py --all` at **06:50** local time. Logs: `output/logs/digest-stdout.log`. Uninstall:
 
 ```bash
 launchctl unload ~/Library/LaunchAgents/com.bitesize.digest.plist
 rm ~/Library/LaunchAgents/com.bitesize.digest.plist
 ```
 
-### Previewing on a real Kindle layout
-
-Apple Books, Calibre, and browser EPUB viewers differ from e-ink Kindles. For a close match, use Amazon’s free **[Kindle Previewer 3](https://www.amazon.com/gp/feature.html?docId=1003018611)**.
-
 ## Configuration
 
-Settings live in **`data/bitesize.db`** (SQLite). The CLI and dashboard share this database.
+| Place | Role |
+| --- | --- |
+| `data/bitesize.db` | Runtime settings and RSS sources |
+| `.env` / `sources.json` | Seed only, first migrate |
+| `data/dashboard.token` | Write-API Bearer token if env is unset |
+| `credentials.json` | Google OAuth client (Gmail / Calendar) |
 
-| File | Purpose |
-|------|---------|
-| `data/bitesize.db` | All runtime settings and RSS sources (primary) |
-| `sources.json` | Legacy seed — imported once if DB is empty |
-| `.env` | Legacy seed — imported once if DB is empty |
-| `credentials.json` | Google OAuth client (gitignored; Gmail/Calendar) |
+Dashboard: `python dashboard.py` → http://127.0.0.1:8765
 
-Enable Gmail or Calendar under **Integrations** in the dashboard (or set `integration_gmail` / `integration_google_calendar` in settings).
+| Tab | What it is for |
+| --- | --- |
+| Settings | AI, language, delivery, integrations |
+| Sources | Categories and feeds |
+| Preview | Live headlines (five at first, then show more) |
+| Jev | Classify runs and label export |
+| Kindle | Delivery status |
 
-## Project layout
+## Troubleshooting
 
-| Module | Role |
-|--------|------|
-| `main.py` | CLI entry point and pipeline orchestration |
-| `dashboard.py` | Local settings dashboard (Flask + HTML UI) |
-| `settings_store.py` | SQLite settings and RSS source storage |
-| `feed.py` | RSS fetch, article extraction, headline filtering |
-| `paywall.py` | Archive mirror fallback for paywalled articles |
-| `gemini.py` | AI prompts for news (uses `ai.py` router) |
-| `ai.py` | Routes to Antigravity, Gemini CLI, or Ollama |
-| `antigravity_backend.py` | `agy` CLI subprocess backend |
-| `ai_locale.py` | pt-BR (and other) EPUB labels and AI language rules |
-| `epub.py` | Kindle-optimized EPUB generation |
-| `cover_art.py` | Magazine-style JPEG cover for library thumbnail |
-| `magazine_layers.py` | Hero story, teasers, desk highlights (deduped layers) |
-| `kindle.py` | SMTP delivery to `@kindle.com` |
-| `books.py` | Copy EPUB to iCloud Books library |
-| `sources_selection.py` | CLI `--all` vs interactive source picking |
-| `gmail.py` / `gmail_processor.py` | Gmail integration |
-| `calendar_fetch.py` / `calendar_processor.py` | Calendar integration |
-| `ui.py` | Interactive source/integration selection |
+**Digest wrote but has no summaries.** The AI backend exited. Check `agy models` / Ollama / Gemini CLI. Retired `gemini-3.5-flash-*` ids map to 3.8 Flash at call time.
 
-## Notes
+**Preview says no headlines.** The fetch is ignoring HTTP proxies on purpose. A real 403 (some AP News URLs) still fails that one source; other feeds keep running.
 
-- RSS fetching uses `requests` + `certifi` for reliable TLS on macOS Python.
-- AI processing batches articles (`gemini_batch_size`, default 20) for fewer, cheaper calls.
-- Legacy Node script `bitesize.js` exists for topic exploration — separate from the Python digest.
-- See [docs/LOCAL_DEV.md](docs/LOCAL_DEV.md) for dev commands and tests.
+**Kindle never arrives.** Confirm App Password, approved sender, and `kindle_delivery_enabled`. The EPUB is already in `output/` either way.
 
-## Open source
+**Books copy failed.** Delivery is best-effort. Check `icloud_books_dir` or skip with `--no-books`.
 
-BiteSIze is MIT-licensed. See [LICENSE](LICENSE), [SECURITY.md](SECURITY.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), and [CONTRIBUTING.md](CONTRIBUTING.md).
+Tests:
 
-Repo: [github.com/victor-salles/bitesize](https://github.com/victor-salles/bitesize).
+```bash
+pip install -r requirements-dev.txt
+pytest tests/ -v --cov
+```
 
-**Before your first run:** copy `.env.example` → `.env`, run `python dashboard.py` to configure settings, or let the CLI migrate from `.env`/`sources.json` once.
+## More
 
-**Security notes:**
-
-- Dashboard binds to `127.0.0.1:8765` only.
-- Write APIs require a Bearer token (`DASHBOARD_TOKEN` or `data/dashboard.token`).
-- RSS feed URLs are fetched as the local user — only add feeds you trust.
-- `wordflow/` is an experimental subproject; do not expose it publicly without auth.
-
-## Pre-publish checklist (maintainers)
-
-- [ ] No `.env`, `data/`, `token.json`, or `credentials.json` in git
-- [ ] PII scan clean on tracked files (`rg -i 'your-email|/Users/you' --glob '!data/**'`)
-- [ ] `pytest tests/ -v --cov` passes (CI gate is 45% line coverage; Gmail/Calendar/CLI are mostly untested)
-- [ ] `pip-audit -r requirements.txt` clean or documented exceptions
-- [ ] LICENSE + SECURITY.md present
-- [ ] GitHub repo set to public with security advisories enabled
-- [ ] Dependabot alerts on; first CI run green (pytest + coverage + pip-audit + gitleaks)
+| Doc | For |
+| --- | --- |
+| [ROADMAP.md](ROADMAP.md) | What is shipped vs what comes next |
+| [ISSUES.md](ISSUES.md) | Known problems in the running app |
+| [docs/LOCAL_DEV.md](docs/LOCAL_DEV.md) | Dev commands |
+| [SECURITY.md](SECURITY.md) | Threat model and how to report issues |
+| [CLAUDE.md](CLAUDE.md) | Agents working in this repo |
