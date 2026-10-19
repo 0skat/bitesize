@@ -2,7 +2,7 @@ import json
 import re
 from typing import Optional
 
-from ai_locale import ai_output_language_rule
+from ai_locale import ai_output_language_rule, ai_summary_language_rule
 from config import console, get_settings
 from ai import call as _call_ai, available as _ai_available
 from tags import TEMAS, normalize_tags
@@ -107,6 +107,42 @@ def _listwise_cluster_log_line(
     return f"listwise fired {ratio_text}"
 
 
+def user_interests() -> str:
+    """Free-text description of what the reader wants, or "" when unset."""
+    return (get_settings().user_interests or "").strip()
+
+
+def _relevance_rule() -> str:
+    """Scoring instruction: generic newsworthiness, or fit to the reader.
+
+    Without interests this is the upstream batch-relative rule. With interests
+    the score becomes absolute — fit to this reader, judged per story — because
+    a keep threshold only means something if 70 means the same thing in every
+    batch. The forced spread is dropped for the same reason: a batch of twenty
+    stories the reader does not care about should be allowed to score low across
+    the board.
+    """
+    interests = user_interests()
+    if not interests:
+        return (
+            "relevance: integer 0–100 comparing this story to the others in THIS batch "
+            "(impact, timeliness, breadth of audience, central vs niche). "
+            "Use the full scale: at most one in five items above 80, at least one in five below 45. "
+            "Do not give several stories the same number. "
+        )
+    return (
+        "relevance: integer 0–100 scoring how much THIS READER would want to read the story. "
+        f"The reader describes their interests as: {interests!r}. "
+        "Judge each story on its own against those interests — do NOT grade on a curve "
+        "against the other stories in this batch, and do not force a spread. "
+        "Scoring guide: 85–100 squarely in their interests; 60–84 adjacent or useful context; "
+        "30–59 general news they did not ask for; 0–29 off-topic. "
+        "A major world event outside their stated interests belongs below 60. "
+        "A niche story inside them belongs above 85. "
+        "Use general news impact only to break ties between equally relevant stories. "
+    )
+
+
 def _assign_fallback_relevance(art: dict) -> None:
     art["relevance"] = _fallback_relevance(art)
     art["relevance_source"] = "fallback"
@@ -156,6 +192,11 @@ def _parse_listwise_order(response: str, n: int) -> list[int] | None:
 
 def _maybe_remap_clustered_batch(batch_results: list[dict]) -> None:
     """One listwise pass when AI scores in a batch are too clustered."""
+    # With interests set, scores are absolute and clustering is real signal —
+    # re-spreading would lift off-topic stories back over min_keep_score.
+    if user_interests():
+        return
+
     ai_articles = [a for a in batch_results if a.get("relevance_source") == "ai"]
     if not _ai_scores_too_clustered(ai_articles):
         return
@@ -261,13 +302,10 @@ def process_articles(articles: list[dict], batch_size: int | None = None) -> lis
             "Rules: skip=true ONLY for pure advertisements or sponsored/promotional content; "
             "real news is never skipped regardless of topic. "
             "summary: exactly 2 factual sentences, no editorialising, no filler phrases. "
-            "relevance: integer 0–100 comparing this story to the others in THIS batch "
-            "(impact, timeliness, breadth of audience, central vs niche). "
-            "Use the full scale: at most one in five items above 80, at least one in five below 45. "
-            "Do not give several stories the same number. "
+            + _relevance_rule() +
             'tipo: exactly "resumo" (paywall teaser or lede-only) or "artigo-completo" (enough body to read). '
             f"temas: zero or more from this fixed list only — do not invent labels: {temas_list}."
-            + ai_output_language_rule()
+            + ai_summary_language_rule()
         )
 
         response = _call_ai(instruction, article_block)

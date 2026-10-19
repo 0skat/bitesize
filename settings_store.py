@@ -19,10 +19,15 @@ SETTINGS_DEFAULTS: dict[str, tuple[str, str, Any]] = {
     "ollama_host": ("ai", "str", "localhost:11434"),
     "ollama_model": ("ai", "str", "llama3:8b"),
     "ollama_timeout": ("ai", "int", 120),
+    "claude_model": ("ai", "str", "claude-haiku-4-5-20251001"),
+    "claude_timeout": ("ai", "int", 180),
     "gemini_batch_size": ("ai", "int", 20),
     "gemini_timeout": ("ai", "int", 120),
     "gemini_check_timeout": ("ai", "int", 6),
     "ai_language": ("ai", "str", "pt-BR"),
+    # "" follows ai_language (upstream behaviour); "source" keeps each summary
+    # in the article's own language.
+    "summary_language": ("ai", "str", ""),
     "max_articles_per_feed": ("feed", "int", 10),
     "feed_timeout": ("feed", "int", 15),
     "truncate_chars": ("feed", "int", 450),
@@ -33,8 +38,16 @@ SETTINGS_DEFAULTS: dict[str, tuple[str, str, Any]] = {
     ),
     "min_body_chars": ("filter", "int", 180),
     "min_summary_chars": ("filter", "int", 80),
+    # Free text describing what you want to read. "" disables personalisation.
+    "user_interests": ("filter", "str", ""),
+    # Drop stories scoring below this (0-100). 0 keeps everything.
+    "min_keep_score": ("filter", "int", 0),
+    # Hard cap on stories per issue, highest score first. 0 means unlimited.
+    "max_articles_per_issue": ("filter", "int", 0),
     "index_entries_per_page": ("epub", "int", 10),
     "top_picks_on_cover": ("epub", "int", 6),
+    # Keep only the newest N EPUBs in output/. 0 keeps every issue forever.
+    "output_keep_issues": ("epub", "int", 0),
     "kindle_email": ("kindle", "str", ""),
     "smtp_user": ("kindle", "str", ""),
     "smtp_password": ("kindle", "str", ""),
@@ -60,18 +73,25 @@ class Settings:
     ollama_host: str = "localhost:11434"
     ollama_model: str = "llama3:8b"
     ollama_timeout: int = 120
+    claude_model: str = "claude-haiku-4-5-20251001"
+    claude_timeout: int = 180
     gemini_batch_size: int = 20
     gemini_timeout: int = 120
     gemini_check_timeout: int = 6
     ai_language: str = "pt-BR"
+    summary_language: str = ""
     max_articles_per_feed: int = 10
     feed_timeout: int = 15
     truncate_chars: int = 450
     user_agent: str = "BiteSIze/1.0 (+https://github.com/local/bitesize)"
     min_body_chars: int = 180
     min_summary_chars: int = 80
+    user_interests: str = ""
+    min_keep_score: int = 0
+    max_articles_per_issue: int = 0
     index_entries_per_page: int = 10
     top_picks_on_cover: int = 6
+    output_keep_issues: int = 0
     kindle_email: str = ""
     smtp_user: str = ""
     smtp_password: str = ""
@@ -212,6 +232,13 @@ _ENV_TO_SETTING = {
     "AI_BACKEND": "ai_backend",
     "ANTIGRAVITY_MODEL": "antigravity_model",
     "AI_LANGUAGE": "ai_language",
+    "CLAUDE_MODEL": "claude_model",
+    "CLAUDE_TIMEOUT": "claude_timeout",
+    "SUMMARY_LANGUAGE": "summary_language",
+    "USER_INTERESTS": "user_interests",
+    "MIN_KEEP_SCORE": "min_keep_score",
+    "MAX_ARTICLES_PER_ISSUE": "max_articles_per_issue",
+    "OUTPUT_KEEP_ISSUES": "output_keep_issues",
     "OLLAMA_HOST": "ollama_host",
     "OLLAMA_MODEL": "ollama_model",
     "OLLAMA_TIMEOUT": "ollama_timeout",

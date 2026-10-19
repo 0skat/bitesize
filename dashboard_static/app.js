@@ -62,7 +62,17 @@ function setStatus(el, msg, ok) {
   el.className = "status" + (msg ? (ok ? " ok" : " err") : "");
 }
 
+const TEXTAREA_KEYS = new Set(["user_interests"]);
+
 function inputForKey(key, value) {
+  if (TEXTAREA_KEYS.has(key)) {
+    const ta = document.createElement("textarea");
+    ta.rows = 4;
+    ta.value = value ?? "";
+    ta.placeholder = "What you want to read about, in your own words.";
+    ta.dataset.key = key;
+    return ta;
+  }
   if (BOOL_KEYS.has(key)) {
     const cb = document.createElement("input");
     cb.type = "checkbox";

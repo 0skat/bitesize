@@ -22,7 +22,12 @@ from ai_locale import epub_label, format_digest_timestamp
 from config import console, get_settings, load_env, OUTPUT_DIR
 from feed import fetch_feed, fetch_article_content, filter_headline_only
 from paywall import log_summary, reset_stats
-from gemini import process_articles, generate_section_cover, generate_global_cover
+from gemini import (
+    article_relevance,
+    generate_global_cover,
+    generate_section_cover,
+    process_articles,
+)
 from magazine_layers import article_rank_sort_key
 from epub import generate_epub
 from books import copy_to_icloud_books
@@ -48,6 +53,62 @@ def _log_headline_drops(dropped: list[dict]) -> None:
     )
     for source, count in by_source.most_common():
         console.print(f"  [dim]   · {source}: {count}[/dim]")
+
+
+# A threshold set too high would otherwise produce an empty book; keep this
+# many top-scored stories so the run still yields something to calibrate on.
+_MIN_FLOOR_ARTICLES = 5
+
+
+def _apply_interest_filter(articles: list[dict]) -> list[dict]:
+    """Drop stories below min_keep_score, then cap at max_articles_per_issue."""
+    settings = get_settings()
+    threshold = settings.min_keep_score
+    cap = settings.max_articles_per_issue
+
+    if threshold <= 0 and cap <= 0:
+        return articles
+
+    kept = articles
+    if threshold > 0:
+        kept = [art for art in articles if article_relevance(art) >= threshold]
+        dropped = len(articles) - len(kept)
+        if not kept and articles:
+            kept = sorted(articles, key=article_rank_sort_key)[:_MIN_FLOOR_ARTICLES]
+            console.print(
+                f"  [yellow]⚠  nothing scored ≥ {threshold} — keeping the top "
+                f"{len(kept)} so the issue is not empty. Lower min_keep_score.[/yellow]"
+            )
+        elif dropped:
+            console.print(
+                f"  [dim]✗  dropped {dropped} below min_keep_score={threshold}[/dim]"
+            )
+
+    if cap > 0 and len(kept) > cap:
+        over = len(kept) - cap
+        kept = sorted(kept, key=article_rank_sort_key)[:cap]
+        console.print(
+            f"  [dim]✂  capped to {cap} stories (trimmed {over})[/dim]"
+        )
+
+    return kept
+
+
+def _prune_old_issues(keep: int) -> None:
+    """Keep only the newest `keep` EPUBs in OUTPUT_DIR. 0 keeps everything."""
+    if keep <= 0 or not OUTPUT_DIR.is_dir():
+        return
+    issues = sorted(
+        OUTPUT_DIR.glob("*.epub"),
+        key=lambda f: f.stat().st_mtime,
+        reverse=True,
+    )
+    for stale in issues[keep:]:
+        try:
+            stale.unlink()
+            console.print(f"  [dim]🗑  pruned {stale.name}[/dim]")
+        except OSError as e:
+            console.print(f"  [yellow]⚠  could not prune {stale.name}: {e}[/yellow]")
 
 
 def main() -> None:
@@ -221,6 +282,7 @@ def main() -> None:
         # ── 3.5 Drop headline-only articles (no readable body or summary) ─────────
         kept_flat, dropped_flat = filter_headline_only(processed_flat)
         _log_headline_drops(dropped_flat)
+        kept_flat = _apply_interest_filter(kept_flat)
 
         processed_sections = {cat: [] for cat in selected}
         for art in kept_flat:
@@ -287,6 +349,8 @@ def main() -> None:
 
     with console.status("[cyan]Generating EPUB…[/cyan]"):
         generate_epub(processed_sections, section_covers, global_cover, out_path)
+
+    _prune_old_issues(settings.output_keep_issues)
 
     total_final = sum(len(v) for v in processed_sections.values())
     console.print(f"\n[bold green]✅  Done![/bold green]  {total_final} articles saved.")

@@ -9,6 +9,7 @@ from config import get_settings
 LANGUAGE_LABELS: dict[str, str] = {
     "pt-BR": "Brazilian Portuguese",
     "en": "English",
+    "es": "Spanish",
 }
 
 EPUB_LABELS: dict[str, dict[str, str]] = {
@@ -93,17 +94,17 @@ EPUB_LABELS: dict[str, dict[str, str]] = {
         ),
         "tipo_resumo": "Summary",
         "tipo_artigo_completo": "Full article",
-        "tema_política": "política",
-        "tema_saúde": "saúde",
-        "tema_economia": "economia",
-        "tema_tecnologia": "tecnologia",
-        "tema_mundo": "mundo",
-        "tema_brasil": "brasil",
-        "tema_cultura": "cultura",
-        "tema_esportes": "esportes",
-        "tema_ciência": "ciência",
-        "tema_opinião": "opinião",
-        "tema_clima": "clima",
+        "tema_política": "politics",
+        "tema_saúde": "health",
+        "tema_economia": "economy",
+        "tema_tecnologia": "technology",
+        "tema_mundo": "world",
+        "tema_brasil": "brazil",
+        "tema_cultura": "culture",
+        "tema_esportes": "sports",
+        "tema_ciência": "science",
+        "tema_opinião": "opinion",
+        "tema_clima": "climate",
         "weekdays": (
             "Monday",
             "Tuesday",
@@ -128,6 +129,64 @@ EPUB_LABELS: dict[str, dict[str, str]] = {
             "December",
         ),
     },
+    "es": {
+        "digest_title": "Resumen de Noticias",
+        "summary": "Resumen",
+        "relevance_score": "Puntuación de relevancia",
+        "relevance": "Relevancia",
+        "top_stories": "Noticias principales por relevancia",
+        "score": "nota",
+        "articles": "artículos",
+        "article_of": "de",
+        "read_full": "Leer el artículo completo en línea →",
+        "contents": "Índice",
+        "sections_today": "Tus secciones en esta edición.",
+        "edition_overview": "En esta edición",
+        "also_inside": "También en esta edición",
+        "by_section": "Por sección",
+        "fallback_section_editorial": "{count} noticias en {category} hoy.",
+        "fallback_section_lead": "Destacado:",
+        "fallback_global_headline": "Resumen de hoy",
+        "fallback_global_editorial": (
+            "Este resumen cubre {total} noticias en {sections} secciones."
+        ),
+        "tipo_resumo": "Resumen",
+        "tipo_artigo_completo": "Artículo completo",
+        "tema_política": "política",
+        "tema_saúde": "salud",
+        "tema_economia": "economía",
+        "tema_tecnologia": "tecnología",
+        "tema_mundo": "mundo",
+        "tema_brasil": "brasil",
+        "tema_cultura": "cultura",
+        "tema_esportes": "deportes",
+        "tema_ciência": "ciencia",
+        "tema_opinião": "opinión",
+        "tema_clima": "clima",
+        "weekdays": (
+            "lunes",
+            "martes",
+            "miércoles",
+            "jueves",
+            "viernes",
+            "sábado",
+            "domingo",
+        ),
+        "months": (
+            "enero",
+            "febrero",
+            "marzo",
+            "abril",
+            "mayo",
+            "junio",
+            "julio",
+            "agosto",
+            "septiembre",
+            "octubre",
+            "noviembre",
+            "diciembre",
+        ),
+    },
 }
 
 
@@ -149,6 +208,34 @@ def ai_output_language_rule() -> str:
         f" Language: write ALL user-facing string values (summary, headline, editorial, "
         f"one_liner, story, note, and any rewritten titles) in {name} ({code}). "
         "Keep JSON keys in English."
+    )
+
+
+def summary_language_code() -> str:
+    """Configured summary language: a code, or "source" to mirror the article."""
+    return (get_settings().summary_language or "").strip()
+
+
+def ai_summary_language_rule() -> str:
+    """Language rule for per-article summaries.
+
+    Unset falls back to the global output rule (upstream behaviour). "source"
+    keeps each summary in the language the article was written in, which is what
+    a bilingual reader wants from a mixed-language feed list.
+    """
+    code = summary_language_code()
+    if not code:
+        return ai_output_language_rule()
+    if code == "source":
+        return (
+            " Language: write each summary in the SAME language as that "
+            "article's own title and body — do not translate between "
+            "articles. Keep JSON keys in English."
+        )
+    name = LANGUAGE_LABELS.get(code, code)
+    return (
+        f" Language: write ALL user-facing string values (summary and any "
+        f"rewritten titles) in {name} ({code}). Keep JSON keys in English."
     )
 
 

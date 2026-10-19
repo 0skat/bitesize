@@ -27,12 +27,13 @@ BiteSIze runs on one machine. It fetches the feeds you pick, pulls full article 
 
 - **Magazine EPUB** — section covers, a global cover, ranked stories, and reflowable HTML that a stock Kindle can open (no in-book JavaScript).
 - **Local dashboard** — settings, RSS sources, live headline Preview, and a **Run digest** button that starts the same job as the morning run.
-- **AI that can be down** — Antigravity (`agy`), Gemini CLI, or Ollama. If none answer, the digest still writes: length-based scores, no summaries.
+- **AI that can be down** — Claude Code CLI, Antigravity (`agy`), Gemini CLI, or Ollama. If none answer, the digest still writes: length-based scores, no summaries.
 - **Optional delivery** — SMTP to `@kindle.com`, copy into iCloud Books. Failures never abort the EPUB.
 - **Optional extra sections** — Gmail threads and Calendar events, off until you turn them on.
 - **Optional Jev triage** — ads, compiled relevance from your ranked themes, `resumo` / `artigo-completo`, and pt-BR temas. Summaries still come from the writing model.
 - **Paywall mirrors** when the first fetch is thin (archive.org is the one that sometimes helps).
-- **pt-BR by default** for the book; dashboard chrome defaults to English.
+- **Personal relevance** — describe your interests in prose and stories are scored on fit to you, with a keep threshold and a per-issue cap.
+- **en / es / pt-BR**, with summaries optionally left in each article's own language.
 
 ## Getting started
 
@@ -73,6 +74,48 @@ The database default is **Antigravity** (`agy`) with `gemini-3.8-flash-high`, su
 
 > [!TIP]
 > You can try the pipeline with no AI at all. You will get a ranked EPUB without summaries. Ollama is the no-cloud option once a model is pulled.
+
+## Reading what you actually care about
+
+Upstream, the only thing that tells BiteSIze what you like is *which feeds you enable*. Relevance measures general newsworthiness — impact, timeliness, breadth of audience — and it is scored **relative to the other stories in the same batch of 20**, so a 70 in one batch does not mean what a 70 means in the next. Daily runs land 120–140 articles with no keep-list, which is more than anyone reads on a tablet.
+
+This fork adds three settings that turn that into a personal digest.
+
+| Setting | What it does |
+| --- | --- |
+| `user_interests` | Free text, in your own words. When set, relevance measures **fit to you** instead of general newsworthiness, scored per story on an absolute 0–100 scale with no forced curve. |
+| `min_keep_score` | Drop anything below this score. Only meaningful once `user_interests` is set, because only then is the scale absolute. |
+| `max_articles_per_issue` | Hard cap, highest score first. |
+
+With interests set, scores separate sharply — stories squarely in your interests land in the 85–100 band and off-topic ones fall below 30 — so a `min_keep_score` around 55–65 is usually the right starting point. Watch one run's scores before tightening it. If the threshold ever drops everything, the run keeps the five best stories and warns you rather than writing an empty book.
+
+Two related behaviours change when `user_interests` is set:
+
+- The **forced score spread** is dropped. Upstream requires one in five stories above 80 and one in five below 45 in every batch; that is wrong here, because a batch of twenty stories you do not care about should be allowed to score low across the board.
+- The **clustered listwise re-rank** is skipped. It exists to spread out bunched-up scores, which would lift off-topic stories back over your threshold — and it costs an extra AI call per clustered batch.
+
+> [!NOTE]
+> The cap trims the **book**, not the AI work: every fetched article is still summarised before filtering. Pre-filtering on titles alone would cut usage further and is not implemented.
+
+### Two languages in one book
+
+`ai_language` sets the book's chrome (section labels, dates, tag names) and now accepts `en`, `es`, or `pt-BR`. `summary_language` controls the summaries separately:
+
+- unset — follow `ai_language` (upstream behaviour)
+- `source` — keep each summary in the language the article was written in
+- `en` / `es` / `pt-BR` — translate every summary into that language
+
+`source` is what a bilingual reader wants from a mixed feed list: English sources stay English, Spanish sources stay Spanish, and only the furniture around them is localised.
+
+### Claude as the AI backend
+
+`ai_backend=claude` drives the [Claude Code](https://claude.com/claude-code) CLI. With no `ANTHROPIC_API_KEY` set it uses your existing Claude subscription rather than per-token API billing; setting that variable switches it to the metered API. The backend strips the CLI's coding-agent system prompt and tool catalogue (`--restricted`, `--strict-mcp-config`, `--exclude-dynamic-system-prompt-sections`), which cuts per-call overhead from roughly 19k tokens to 6k. `claude_model` defaults to Haiku, which is enough for batch JSON.
+
+### Keeping storage flat
+
+Upstream keeps every EPUB in `output/` forever. `output_keep_issues` prunes to the newest N after each successful run (0 keeps everything, the old behaviour).
+
+Delivery to an iPad is better served by iCloud Books than by Kindle email: Amazon never auto-deletes Send-to-Kindle personal documents and gives you no automation for cleanup, while deleting from Books on the iPad propagates everywhere. Run with `--no-kindle`.
 
 ## How it works
 

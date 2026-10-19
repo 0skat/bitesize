@@ -1,0 +1,111 @@
+"""Claude Code CLI (claude) transport backend."""
+
+import json
+import subprocess
+from pathlib import Path
+from typing import Optional
+
+from config import console, get_settings
+
+_CLAUDE_OK: Optional[bool] = None
+
+# Shortcuts and LaunchAgents often omit ~/.local/bin from PATH.
+_CLAUDE_BIN = str(Path.home() / ".local" / "bin" / "claude")
+
+# The CLI ships a full coding-agent system prompt and tool catalogue on every
+# call. The digest only needs text in, text out, so strip everything strippable:
+# this cuts the per-call prompt overhead from ~19k tokens to ~6k.
+_LEAN_FLAGS = (
+    "--restricted",
+    "--strict-mcp-config",
+    "--exclude-dynamic-system-prompt-sections",
+)
+
+_DISALLOWED_TOOLS = (
+    "Bash",
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "WebFetch",
+    "WebSearch",
+    "TodoWrite",
+    "Task",
+    "NotebookEdit",
+)
+
+_SYSTEM_PROMPT = (
+    "You are a text transformation API. Return only the requested output, "
+    "with no preamble, commentary, or markdown fences."
+)
+
+
+def available() -> bool:
+    """Return True if the claude CLI is reachable."""
+    global _CLAUDE_OK
+    if _CLAUDE_OK is None:
+        try:
+            subprocess.run(
+                [_CLAUDE_BIN, "--version"],
+                capture_output=True,
+                timeout=get_settings().gemini_check_timeout,
+            )
+            _CLAUDE_OK = True
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            _CLAUDE_OK = False
+    return _CLAUDE_OK
+
+
+def call(instruction: str, stdin_data: str, label: str = "") -> Optional[str]:
+    """Run the Claude CLI in print mode and return the response string."""
+    tag = f"[{label}] " if label else ""
+    settings = get_settings()
+    model = (settings.claude_model or "claude-haiku-4-5-20251001").strip()
+    timeout = settings.claude_timeout
+    prompt = f"{instruction}\n\n{stdin_data}" if stdin_data else instruction
+
+    try:
+        result = subprocess.run(
+            [
+                _CLAUDE_BIN,
+                "-p",
+                prompt,
+                "--model",
+                model,
+                "--output-format",
+                "json",
+                "--system-prompt",
+                _SYSTEM_PROMPT,
+                *_LEAN_FLAGS,
+                "--disallowed-tools",
+                *_DISALLOWED_TOOLS,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=timeout + 30,
+        )
+        if result.returncode != 0:
+            console.print(
+                f"  [yellow]⚠  {tag}Claude exited {result.returncode}[/yellow]"
+                + (f": {result.stderr.strip()[:200]}" if result.stderr.strip() else "")
+            )
+            return None
+
+        data = json.loads(result.stdout)
+        if data.get("is_error") or data.get("subtype") != "success":
+            console.print(
+                f"  [yellow]⚠  {tag}Claude returned "
+                f"{data.get('subtype')!r} (error={data.get('is_error')})[/yellow]"
+            )
+            return None
+        response = data.get("result", "")
+        return response.strip() if isinstance(response, str) else None
+
+    except subprocess.TimeoutExpired:
+        console.print(f"  [yellow]⚠  {tag}Claude call timed out ({timeout}s)[/yellow]")
+    except json.JSONDecodeError as e:
+        console.print(f"  [yellow]⚠  {tag}Claude JSON decode failed: {e}[/yellow]")
+    except FileNotFoundError:
+        console.print("  [yellow]⚠  Claude CLI (claude) not found[/yellow]")
+    return None
