@@ -49,6 +49,24 @@ This matches the documented single-user threat model. It is still an issue if th
 
 **Still open:** Next morning digest should confirm the fallback layer no longer walls at 7.8; listwise un-clustering needs the same real-world check.
 
+**Note:** listwise un-clustering is now skipped entirely when `user_interests` is set. Under interest scoring, clustered scores are real signal — a batch of twenty off-topic stories *should* all score low — and re-spreading them across the batch min/max would lift off-topic stories back over `min_keep_score`. The real-world check above therefore only applies to runs with no interests configured.
+
+## README documents a "Jev triage" feature that is not in the code
+
+**Expected:** README's Features list and its "Optional phases → Jev" section describe ad/relevance triage driven by "compiled relevance from your ranked themes", a `jev_triage_enabled` setting, a `jev_min_keep` threshold, a TypeSafe / Vercel AI Gateway key, a Jev dashboard tab, and runs logged under `output/jev/`.
+
+**Actual:** There is no `jev` anywhere in the tree — no module, no settings key, no dashboard tab, no tests. `grep -ri jev --include='*.py'` returns nothing, and `SETTINGS_DEFAULTS` has no such keys.
+
+Introduced by the README rewrite (PR #21). The described keep-threshold overlaps with `min_keep_score`, which does exist. Either the section should be removed or the feature should be built; until then a new operator will look for settings that are not there.
+
+## Dashboard has no `claude` backend picker
+
+**Expected:** Choosing an AI backend in Settings offers the backends `ai.py` actually routes to.
+
+**Actual:** The Settings tab renders every setting generically from `/api/settings`, so `ai_backend` is a free-text box. It works — typing `claude` selects the new backend — but nothing tells you which values are valid, and a typo silently falls through to the Gemini backend (`ai.py` uses `else`, not a match on `gemini`).
+
+Same root cause as the books-toggle issue: the dashboard has no per-key widget map beyond `BOOL_KEYS`.
+
 ## Closed here on purpose (do not re-open from old plans)
 
 These were open in `docs/superpowers/plans/2026-05-26-open-source-security-readiness.md`. The code has moved on:

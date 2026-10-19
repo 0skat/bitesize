@@ -43,7 +43,9 @@ RSS (parallel) → full text + paywall mirrors → AI filter/summarize/score →
 
 Gmail and Calendar inject extra sections when their integration flags are on. The daily LaunchAgent uses `--all`, so it honors those flags from the database and does not prompt.
 
-AI calls go through `ai.py` (`antigravity` / `gemini` / `ollama`). Prompts live in `gemini.py` plus the Gmail/Calendar processors. If the backend is down, the digest still writes: length-based relevance, no summaries.
+AI calls go through `ai.py` (`claude` / `antigravity` / `gemini` / `ollama` — note the router falls through to Gemini on any unrecognised value). Prompts live in `gemini.py` plus the Gmail/Calendar processors. If the backend is down, the digest still writes: length-based relevance, no summaries.
+
+Relevance has two modes, and this matters before touching scoring. With `user_interests` empty it is upstream's batch-relative newsworthiness score, with a forced spread and a listwise re-rank for clustered batches. With `user_interests` set it is an absolute per-story fit score, and both the forced spread and the listwise re-rank are deliberately disabled (`gemini._relevance_rule`, `gemini._maybe_remap_clustered_batch`) — re-enabling either would break `min_keep_score`. The keep-list and the `output/` prune live in `main.py` (`_apply_interest_filter`, `_prune_old_issues`).
 
 ## Conventions
 
@@ -52,9 +54,10 @@ AI calls go through `ai.py` (`antigravity` / `gemini` / `ollama`). Prompts live 
 - **Tests first** for behavior changes. `pytest tests/ -v` is the gate.
 - **Delivery is best-effort.** Kindle/Books failures must not abort EPUB write.
 - **Stock Kindle has no JavaScript.** Internal links, covers, and reflowable HTML only. See `docs/research/2026-08-14-kindle-interactive-epub.md` before promising interactivity.
-- **Tags / completeness / Safari Reader** — planned, not built. See [ROADMAP.md](ROADMAP.md) items 1–2 and `docs/research/2026-08-30-safari-reader-paywall.md`. Do not invent English topic labels; the vocabulary is pt-BR.
+- **Safari Reader** — planned, not built. See [ROADMAP.md](ROADMAP.md) item 1 and `docs/research/2026-08-30-safari-reader-paywall.md`.
+- **The topic vocabulary stays pt-BR.** `tags.TEMAS` is the canonical set and its keys are pt-BR; do not invent new topic labels. Rendering those keys for a reader is separate: `EPUB_LABELS[<lang>]["tema_*"]` holds display strings per language, and `en` / `es` now translate them. Add a display label, never a vocabulary entry.
 - **`wordflow/`** is a separate experimental Next.js app. Do not treat it as part of the digest unless the task names it.
-- **Published default is `main`.** Remote: `https://github.com/victor-salles/bitesize`. Do not commit `.env`, `data/`, or `output/`.
+- **Published default is `main`.** `upstream` is `https://github.com/victor-salles/bitesize`; this fork's own work goes to `origin`. Keep fork changes additive and confined to small files so they rebase on upstream. Do not commit `.env`, `data/`, or `output/`.
 
 ## Put down
 
