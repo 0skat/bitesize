@@ -67,6 +67,14 @@ Introduced by the README rewrite (PR #21). The described keep-threshold overlaps
 
 Same root cause as the books-toggle issue: the dashboard has no per-key widget map beyond `BOOL_KEYS`.
 
+## `_extract_json` prefers arrays over objects
+
+**Expected:** `gemini._extract_json` recovers JSON of either shape from a model response.
+
+**Actual:** When the direct `json.loads` fails, the regex fallback tries `\[[\s\S]*\]` **before** `\{[\s\S]*\}`. For the section- and global-cover prompts, which ask for an object containing a `top_stories` array, that returns the inner array and the caller rejects it with `Expected dict, got list` — every cover silently falls back to the non-AI layout.
+
+Only reachable when the direct parse fails, i.e. when the model wraps its reply in a markdown fence. The Claude backend strips a wrapping fence before returning (`claude_backend._strip_code_fence`) so the direct parse wins; the docstring claims fence tolerance that the function does not actually implement. A backend-agnostic fix would try the object pattern first, or strip fences inside `_extract_json`.
+
 ## Closed here on purpose (do not re-open from old plans)
 
 These were open in `docs/superpowers/plans/2026-05-26-open-source-security-readiness.md`. The code has moved on:

@@ -237,3 +237,44 @@ def test_summary_rule_can_pin_a_language(isolated_store, monkeypatch):
     _reload(monkeypatch)
 
     assert "Spanish" in ai_summary_language_rule()
+
+
+# ── Claude transport ────────────────────────────────────────────────────────
+
+
+def test_strip_code_fence_unwraps_json_objects():
+    from claude_backend import _strip_code_fence
+
+    assert _strip_code_fence('```json\n{"a": [1, 2]}\n```') == '{"a": [1, 2]}'
+    assert _strip_code_fence("```\n[1, 2]\n```") == "[1, 2]"
+
+
+def test_strip_code_fence_leaves_bare_json_alone():
+    from claude_backend import _strip_code_fence
+
+    assert _strip_code_fence('{"a": 1}') == '{"a": 1}'
+    assert _strip_code_fence('[{"id": 0}]') == '[{"id": 0}]'
+
+
+def test_strip_code_fence_ignores_a_non_wrapping_fence():
+    from claude_backend import _strip_code_fence
+
+    text = 'prose ```json\n{}\n```'
+    assert _strip_code_fence(text) == text
+
+
+def test_fenced_object_would_otherwise_parse_as_its_inner_array():
+    """Why the fence strip exists: _extract_json tries arrays before objects."""
+    from claude_backend import _strip_code_fence
+    from gemini import _extract_json
+
+    fenced = '```json\n{"headline": "H", "top_stories": [{"title": "T"}]}\n```'
+
+    # Unstripped, the regex fallback finds top_stories and returns a list,
+    # which the cover code rejects with "Expected dict, got list".
+    assert isinstance(_extract_json(fenced), list)
+
+    # Stripped, the direct parse wins and the object survives.
+    parsed = _extract_json(_strip_code_fence(fenced))
+    assert isinstance(parsed, dict)
+    assert parsed["headline"] == "H"

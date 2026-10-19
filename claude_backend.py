@@ -1,6 +1,7 @@
 """Claude Code CLI (claude) transport backend."""
 
 import json
+import re
 import subprocess
 from pathlib import Path
 from typing import Optional
@@ -39,6 +40,22 @@ _SYSTEM_PROMPT = (
     "You are a text transformation API. Return only the requested output, "
     "with no preamble, commentary, or markdown fences."
 )
+
+# Claude fences JSON even when told not to. Callers parse with
+# gemini._extract_json, whose regex fallback tries arrays before objects — so a
+# fenced OBJECT containing an array (the section/global cover shape) would yield
+# that inner array and be rejected as "Expected dict, got list". Strip the fence
+# here so the direct json.loads succeeds and the regex never runs.
+_FENCE_RE = re.compile(
+    r"\A\s*```(?:json|JSON)?\s*\n(?P<body>.*?)\n?\s*```\s*\Z",
+    re.DOTALL,
+)
+
+
+def _strip_code_fence(text: str) -> str:
+    """Remove a single wrapping markdown code fence, if present."""
+    match = _FENCE_RE.match(text)
+    return match.group("body").strip() if match else text
 
 
 def available() -> bool:
@@ -100,7 +117,9 @@ def call(instruction: str, stdin_data: str, label: str = "") -> Optional[str]:
             )
             return None
         response = data.get("result", "")
-        return response.strip() if isinstance(response, str) else None
+        if not isinstance(response, str):
+            return None
+        return _strip_code_fence(response.strip())
 
     except subprocess.TimeoutExpired:
         console.print(f"  [yellow]⚠  {tag}Claude call timed out ({timeout}s)[/yellow]")
