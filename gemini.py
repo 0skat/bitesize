@@ -143,6 +143,121 @@ def _relevance_rule() -> str:
     )
 
 
+# Titles are short, so the screening pass can take far larger batches than the
+# summarising pass. Each batch is one AI call.
+PREFILTER_BATCH_SIZE = 60
+
+# Score given to an article whose screening batch failed to come back. Neutral
+# rather than zero: a failed call must not silently delete its articles, but it
+# should not let them outrank genuinely-matched ones either.
+PREFILTER_NEUTRAL_SCORE = 50
+
+
+def _prefilter_instruction(n: int, interests: str) -> str:
+    return (
+        f"You are screening {n} news headlines for one reader. "
+        f"The reader describes their interests as: {interests!r}. "
+        "Return ONLY a raw JSON array — no markdown fences, no explanation — "
+        'one object per headline: [{"id":0,"score":85}] '
+        "score: integer 0–100 for how much this reader would want to read the "
+        "story, judged from the headline alone. Be decisive: clearly inside "
+        "their interests above 70, clearly outside below 30. This is a cheap "
+        "screening pass before the real read, so when a headline is ambiguous "
+        "score it in the middle rather than rejecting it. "
+        "Every id from 0 to " + str(n - 1) + " must appear exactly once."
+    )
+
+
+def _parse_prefilter_scores(response: str, n: int, label: str) -> dict[int, int]:
+    parsed = _extract_json(response, label=label)
+    if not isinstance(parsed, list):
+        return {}
+    out: dict[int, int] = {}
+    for item in parsed:
+        if not isinstance(item, dict):
+            continue
+        idx = item.get("id", -1)
+        if not isinstance(idx, int) or not (0 <= idx < n):
+            continue
+        out[idx] = _normalize_relevance(item.get("score"))
+    return out
+
+
+def prefilter_by_title(
+    articles: list[dict], keep: int
+) -> tuple[list[dict], list[dict]]:
+    """Screen on titles alone, keeping the `keep` best matches.
+
+    The full pass fetches and summarises every article before anything is
+    filtered, so a large feed list pays to summarise stories the keep-list then
+    throws away. Titles are cheap: one call screens sixty of them, and only the
+    survivors get a body fetch and a summary.
+
+    Returns (kept, dropped). Fails open — no interests, no AI, or nothing to
+    gain and everything is kept, because dropping an article here means it is
+    never read at all.
+    """
+    interests = user_interests()
+    if keep <= 0 or not interests or len(articles) <= keep:
+        return articles, []
+    if not _ai_available():
+        console.print(
+            "  [yellow]⚠  AI backend not available — skipping title screen[/yellow]"
+        )
+        return articles, []
+
+    scores: dict[int, int] = {}
+    batches = range(0, len(articles), PREFILTER_BATCH_SIZE)
+    for start in batches:
+        batch = articles[start : start + PREFILTER_BATCH_SIZE]
+        label = f"prefilter-{start // PREFILTER_BATCH_SIZE + 1}"
+        title_block = "".join(
+            f'[{i}] "{art.get("title", "")}"\n' for i, art in enumerate(batch)
+        )
+        response = _call_ai(
+            _prefilter_instruction(len(batch), interests), title_block, label=label
+        )
+        batch_scores = _parse_prefilter_scores(response, len(batch), label) if response else {}
+        if not batch_scores:
+            console.print(
+                f"  [yellow]⚠  [{label}] no usable scores — "
+                f"{len(batch)} titles held at neutral[/yellow]"
+            )
+        for i, art in enumerate(batch):
+            scores[start + i] = batch_scores.get(i, PREFILTER_NEUTRAL_SCORE)
+
+    for i, art in enumerate(articles):
+        art["prefilter_score"] = scores.get(i, PREFILTER_NEUTRAL_SCORE)
+
+    # Scores bunch up — a screening model asked to judge a bare headline returns
+    # the same number for dozens of them — so the cut line usually falls inside
+    # a tie. Breaking that tie by list order would hand every slot to whichever
+    # feeds happen to come first, burying whole interest areas. Rank each
+    # article within its own section first, then interleave: at equal scores the
+    # best of every section is taken before the second-best of any.
+    rank_in_section: dict[int, int] = {}
+    by_section: dict[str, list[int]] = {}
+    for i, art in enumerate(articles):
+        by_section.setdefault(art.get("category", ""), []).append(i)
+    for members in by_section.values():
+        members.sort(key=lambda i: (-scores.get(i, PREFILTER_NEUTRAL_SCORE), i))
+        for position, i in enumerate(members):
+            rank_in_section[i] = position
+
+    ranked = sorted(
+        range(len(articles)),
+        key=lambda i: (
+            -scores.get(i, PREFILTER_NEUTRAL_SCORE),
+            rank_in_section[i],
+            i,
+        ),
+    )
+    keep_idx = set(ranked[:keep])
+    kept = [art for i, art in enumerate(articles) if i in keep_idx]
+    dropped = [art for i, art in enumerate(articles) if i not in keep_idx]
+    return kept, dropped
+
+
 def _assign_fallback_relevance(art: dict) -> None:
     art["relevance"] = _fallback_relevance(art)
     art["relevance_source"] = "fallback"

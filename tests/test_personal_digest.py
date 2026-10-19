@@ -278,3 +278,279 @@ def test_fenced_object_would_otherwise_parse_as_its_inner_array():
     parsed = _extract_json(_strip_code_fence(fenced))
     assert isinstance(parsed, dict)
     assert parsed["headline"] == "H"
+
+
+# ── Cross-feed dedupe ───────────────────────────────────────────────────────
+
+
+def _raw(title, url, source="S"):
+    return {"title": title, "url": url, "source": source}
+
+
+def test_dedupe_drops_identical_urls():
+    from feed import dedupe_articles
+
+    kept, dropped = dedupe_articles([
+        _raw("A story", "http://x/1"),
+        _raw("Different headline", "http://x/1"),
+    ])
+    assert len(kept) == 1
+    assert len(dropped) == 1
+
+
+def test_dedupe_drops_same_title_from_two_feeds():
+    """The real case: a club feed and its parent sport feed carry one story."""
+    from feed import dedupe_articles
+
+    kept, dropped = dedupe_articles([
+        _raw("Araujo the stopgap solution fixing Liverpool's problems",
+             "http://bbc/sport/liverpool/1", "BBC Liverpool"),
+        _raw("Araujo the stopgap solution fixing Liverpool's problems",
+             "http://bbc/sport/football/9", "BBC Football"),
+    ])
+    assert [a["source"] for a in kept] == ["BBC Liverpool"]
+    assert [a["source"] for a in dropped] == ["BBC Football"]
+
+
+def test_dedupe_ignores_case_spacing_and_punctuation():
+    from feed import dedupe_articles
+
+    kept, _ = dedupe_articles([
+        _raw("Liverpool Beat Villarreal, 2-0", "http://a/1"),
+        _raw("liverpool beat villarreal 20", "http://b/2"),
+    ])
+    assert len(kept) == 1
+
+
+def test_dedupe_keeps_distinct_short_titles():
+    """Containment matching must not collapse unrelated short headlines."""
+    from feed import dedupe_articles
+
+    kept, dropped = dedupe_articles([
+        _raw("Short one", "http://a/1"),
+        _raw("Short two", "http://b/2"),
+        _raw("One", "http://c/3"),
+    ])
+    assert len(kept) == 3
+    assert dropped == []
+
+
+def test_dedupe_collapses_long_containment():
+    from feed import dedupe_articles
+
+    kept, dropped = dedupe_articles([
+        _raw("Liverpool sign a new centre back from Barcelona", "http://a/1"),
+        _raw("Liverpool sign a new centre back from Barcelona in January",
+             "http://b/2"),
+    ])
+    assert len(kept) == 1
+    assert len(dropped) == 1
+
+
+def test_dedupe_preserves_order_and_handles_empties():
+    from feed import dedupe_articles
+
+    kept, _ = dedupe_articles([
+        {"title": "", "url": ""},
+        _raw("Real story here about something", "http://a/1"),
+        {"title": "", "url": ""},
+    ])
+    assert len(kept) == 3  # blanks are never treated as duplicates of each other
+
+
+# ── Title pre-filter ────────────────────────────────────────────────────────
+
+
+def _titled(n):
+    return [{"title": f"Story number {i}", "url": f"http://x/{i}"} for i in range(n)]
+
+
+def test_prefilter_is_skipped_when_disabled(isolated_store, monkeypatch):
+    store.init_db()
+    store.set_setting("user_interests", "soccer")
+    _reload(monkeypatch)
+
+    import gemini
+
+    called = []
+    monkeypatch.setattr(gemini, "_call_ai", lambda *a, **k: called.append(1) or None)
+
+    arts = _titled(10)
+    kept, dropped = gemini.prefilter_by_title(arts, 0)
+    assert kept == arts and dropped == []
+    assert called == []
+
+
+def test_prefilter_is_skipped_without_interests(isolated_store, monkeypatch):
+    store.init_db()
+    _reload(monkeypatch)
+
+    import gemini
+
+    called = []
+    monkeypatch.setattr(gemini, "_call_ai", lambda *a, **k: called.append(1) or None)
+
+    arts = _titled(10)
+    kept, _ = gemini.prefilter_by_title(arts, 5)
+    assert kept == arts
+    assert called == [], "no interests means nothing to screen against"
+
+
+def test_prefilter_skips_when_there_is_nothing_to_gain(isolated_store, monkeypatch):
+    store.init_db()
+    store.set_setting("user_interests", "soccer")
+    _reload(monkeypatch)
+
+    import gemini
+
+    called = []
+    monkeypatch.setattr(gemini, "_call_ai", lambda *a, **k: called.append(1) or None)
+
+    arts = _titled(5)
+    kept, _ = gemini.prefilter_by_title(arts, 10)
+    assert kept == arts
+    assert called == []
+
+
+def test_prefilter_keeps_the_best_scoring_titles(isolated_store, monkeypatch):
+    store.init_db()
+    store.set_setting("user_interests", "soccer")
+    _reload(monkeypatch)
+
+    import gemini
+
+    # Score is the reverse of the index, so article 0 ranks highest.
+    def fake(instruction, block, label=""):
+        import json, re
+        ids = [int(m) for m in re.findall(r"^\[(\d+)\]", block, re.M)]
+        return json.dumps([{"id": i, "score": 99 - i} for i in ids])
+
+    monkeypatch.setattr(gemini, "_call_ai", fake)
+    monkeypatch.setattr(gemini, "_ai_available", lambda: True)
+
+    arts = _titled(10)
+    kept, dropped = gemini.prefilter_by_title(arts, 3)
+    assert [a["title"] for a in kept] == [
+        "Story number 0", "Story number 1", "Story number 2"]
+    assert len(dropped) == 7
+    assert kept[0]["prefilter_score"] == 99
+
+
+def test_prefilter_fails_open_when_the_backend_is_down(isolated_store, monkeypatch):
+    store.init_db()
+    store.set_setting("user_interests", "soccer")
+    _reload(monkeypatch)
+
+    import gemini
+
+    monkeypatch.setattr(gemini, "_ai_available", lambda: False)
+    arts = _titled(10)
+    kept, dropped = gemini.prefilter_by_title(arts, 3)
+    assert kept == arts, "a down backend must not silently delete articles"
+    assert dropped == []
+
+
+def test_prefilter_holds_a_failed_batch_at_neutral(isolated_store, monkeypatch):
+    store.init_db()
+    store.set_setting("user_interests", "soccer")
+    _reload(monkeypatch)
+
+    import gemini
+
+    monkeypatch.setattr(gemini, "_ai_available", lambda: True)
+    monkeypatch.setattr(gemini, "_call_ai", lambda *a, **k: "not json at all")
+
+    arts = _titled(10)
+    kept, dropped = gemini.prefilter_by_title(arts, 4)
+    # Unscored articles tie at neutral, so the first four survive on index order
+    # rather than all ten being discarded.
+    assert len(kept) == 4
+    assert len(dropped) == 6
+    assert all(a["prefilter_score"] == gemini.PREFILTER_NEUTRAL_SCORE for a in kept)
+
+
+def test_prefilter_batches_large_inputs(isolated_store, monkeypatch):
+    store.init_db()
+    store.set_setting("user_interests", "soccer")
+    _reload(monkeypatch)
+
+    import gemini
+
+    calls = []
+
+    def fake(instruction, block, label=""):
+        import json, re
+        ids = [int(m) for m in re.findall(r"^\[(\d+)\]", block, re.M)]
+        calls.append(len(ids))
+        return json.dumps([{"id": i, "score": 70} for i in ids])
+
+    monkeypatch.setattr(gemini, "_ai_available", lambda: True)
+    monkeypatch.setattr(gemini, "_call_ai", fake)
+
+    gemini.prefilter_by_title(_titled(130), 20)
+    assert calls == [60, 60, 10], "should batch by PREFILTER_BATCH_SIZE"
+
+
+def test_prefilter_spreads_ties_across_sections(isolated_store, monkeypatch):
+    """A tie at the cut line must not hand every slot to one section."""
+    store.init_db()
+    store.set_setting("user_interests", "art and farming")
+    _reload(monkeypatch)
+
+    import gemini
+    import json
+
+    # Everything ties, so only the tie-break decides who survives.
+    monkeypatch.setattr(gemini, "_ai_available", lambda: True)
+    monkeypatch.setattr(
+        gemini, "_call_ai",
+        lambda instruction, block, label="": json.dumps([
+            {"id": i, "score": 75}
+            for i in range(block.count("\n"))
+        ]))
+
+    # Ten Agriculture stories listed first, then four Art ones.
+    arts = (
+        [{"title": f"Farm {i}", "url": f"http://f/{i}", "category": "Agriculture"}
+         for i in range(10)]
+        + [{"title": f"Art {i}", "url": f"http://a/{i}", "category": "Art"}
+           for i in range(4)]
+    )
+
+    kept, _ = gemini.prefilter_by_title(arts, 6)
+    sections = [a["category"] for a in kept]
+    assert sections.count("Art") == 3, sections
+    assert sections.count("Agriculture") == 3, sections
+
+
+def test_prefilter_still_prefers_higher_scores_over_spread(isolated_store, monkeypatch):
+    """Diversity only breaks ties; a better score always wins outright."""
+    store.init_db()
+    store.set_setting("user_interests", "soccer")
+    _reload(monkeypatch)
+
+    import gemini
+    import json, re
+
+    scores = {"Soccer": 95, "Art": 20}
+
+    def fake(instruction, block, label=""):
+        out = []
+        for line in block.splitlines():
+            m = re.match(r"\[(\d+)\] \"(\w+)", line)
+            if m:
+                out.append({"id": int(m.group(1)),
+                            "score": scores["Soccer" if m.group(2) == "Match" else "Art"]})
+        return json.dumps(out)
+
+    monkeypatch.setattr(gemini, "_ai_available", lambda: True)
+    monkeypatch.setattr(gemini, "_call_ai", fake)
+
+    arts = (
+        [{"title": f"Match report {i}", "url": f"http://s/{i}", "category": "Soccer"}
+         for i in range(5)]
+        + [{"title": f"Gallery show {i}", "url": f"http://a/{i}", "category": "Art"}
+           for i in range(5)]
+    )
+    kept, _ = gemini.prefilter_by_title(arts, 4)
+    assert all(a["category"] == "Soccer" for a in kept), [a["category"] for a in kept]

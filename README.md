@@ -86,6 +86,7 @@ This fork adds three settings that turn that into a personal digest.
 | `user_interests` | Free text, in your own words. When set, relevance measures **fit to you** instead of general newsworthiness, scored per story on an absolute 0–100 scale with no forced curve. |
 | `min_keep_score` | Drop anything below this score. Only meaningful once `user_interests` is set, because only then is the scale absolute. |
 | `max_articles_per_issue` | Hard cap, highest score first. |
+| `prefilter_keep` | Screen on titles first and carry only this many into the body fetch and the summarising pass. 0 disables it. |
 
 With interests set, scores separate sharply — stories squarely in your interests land in the 85–100 band and off-topic ones fall below 30 — so a `min_keep_score` around 55–65 is usually the right starting point. Watch one run's scores before tightening it. If the threshold ever drops everything, the run keeps the five best stories and warns you rather than writing an empty book.
 
@@ -94,8 +95,15 @@ Two related behaviours change when `user_interests` is set:
 - The **forced score spread** is dropped. Upstream requires one in five stories above 80 and one in five below 45 in every batch; that is wrong here, because a batch of twenty stories you do not care about should be allowed to score low across the board.
 - The **clustered listwise re-rank** is skipped. It exists to spread out bunched-up scores, which would lift off-topic stories back over your threshold — and it costs an extra AI call per clustered batch.
 
-> [!NOTE]
-> The cap trims the **book**, not the AI work: every fetched article is still summarised before filtering. Pre-filtering on titles alone would cut usage further and is not implemented.
+### Two passes, not one
+
+The cap alone trims the **book**, not the work: without `prefilter_keep`, every fetched article gets a body fetch and a summary before anything is filtered, so a large feed list pays to summarise stories the keep-list then discards. On a 45-feed list that was 269 articles and 14 summarising calls to keep 25.
+
+`prefilter_keep` adds a cheap screening pass first. Titles alone go to the model, sixty per call, scored against the same interests; only the survivors get a body fetch and a summary. Set it comfortably above what you expect to keep, since a title is less informative than an article — with a 25-story cap and `min_keep_score=80`, 80 is a reasonable screen.
+
+The screen **fails open** in every uncertain case: no interests, no AI backend, fewer articles than the keep count, or a batch that comes back unparseable all leave articles in rather than out. A rejected story here is never read at all, so the failure has to be the safe direction. Articles whose batch failed are held at a neutral score so they compete on order instead of being silently dropped.
+
+Cross-feed duplicates are removed in the same place, before the body fetch. Overlapping feeds — a club feed and its parent sport feed, a wire service and the paper that runs it — were delivering the same story twice; upstream only deduplicated against the cover story, never within the article pool.
 
 ### Two languages in one book
 

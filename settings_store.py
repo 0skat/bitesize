@@ -44,6 +44,9 @@ SETTINGS_DEFAULTS: dict[str, tuple[str, str, Any]] = {
     "min_keep_score": ("filter", "int", 0),
     # Hard cap on stories per issue, highest score first. 0 means unlimited.
     "max_articles_per_issue": ("filter", "int", 0),
+    # Screen on titles first and carry only this many into the body fetch and
+    # the summarising pass. 0 disables the screen (every article is summarised).
+    "prefilter_keep": ("filter", "int", 0),
     "index_entries_per_page": ("epub", "int", 10),
     "top_picks_on_cover": ("epub", "int", 6),
     # Keep only the newest N EPUBs in output/. 0 keeps every issue forever.
@@ -89,6 +92,7 @@ class Settings:
     user_interests: str = ""
     min_keep_score: int = 0
     max_articles_per_issue: int = 0
+    prefilter_keep: int = 0
     index_entries_per_page: int = 10
     top_picks_on_cover: int = 6
     output_keep_issues: int = 0
@@ -238,6 +242,7 @@ _ENV_TO_SETTING = {
     "USER_INTERESTS": "user_interests",
     "MIN_KEEP_SCORE": "min_keep_score",
     "MAX_ARTICLES_PER_ISSUE": "max_articles_per_issue",
+    "PREFILTER_KEEP": "prefilter_keep",
     "OUTPUT_KEEP_ISSUES": "output_keep_issues",
     "OLLAMA_HOST": "ollama_host",
     "OLLAMA_MODEL": "ollama_model",

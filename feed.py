@@ -80,6 +80,57 @@ def has_readable_content(
     return len(body) >= min_body or len(summary) >= min_summary
 
 
+def _dedupe_key(title: str) -> str:
+    """Normalised title for duplicate detection: case, spacing, punctuation."""
+    t = re.sub(r"\s+", " ", (title or "").strip().lower())
+    return re.sub(r"[^\w\s]", "", t).strip()
+
+
+# Titles shorter than this are not matched by containment — too many false
+# positives ("Liverpool latest" is inside plenty of unrelated headlines).
+_CONTAINMENT_MIN_CHARS = 24
+
+
+def dedupe_articles(articles: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Split articles into unique vs duplicate-of-an-earlier-one.
+
+    Overlapping feeds carry the same story — a club feed and its parent sport
+    feed, a wire service and the paper that runs it. Deduping here, before the
+    body fetch, saves both the fetch and the AI call as well as keeping repeats
+    out of the book. The first occurrence wins, so feed order decides which
+    source is credited.
+    """
+    kept: list[dict] = []
+    dropped: list[dict] = []
+    seen_urls: set[str] = set()
+    seen_titles: set[str] = set()
+
+    for art in articles:
+        url = (art.get("url") or "").strip()
+        key = _dedupe_key(art.get("title", ""))
+
+        if url and url in seen_urls:
+            dropped.append(art)
+            continue
+        if key and key in seen_titles:
+            dropped.append(art)
+            continue
+        if key and len(key) > _CONTAINMENT_MIN_CHARS and any(
+            key in prev or prev in key for prev in seen_titles
+            if len(prev) > _CONTAINMENT_MIN_CHARS
+        ):
+            dropped.append(art)
+            continue
+
+        if url:
+            seen_urls.add(url)
+        if key:
+            seen_titles.add(key)
+        kept.append(art)
+
+    return kept, dropped
+
+
 def filter_headline_only(
     articles: list[dict],
 ) -> tuple[list[dict], list[dict]]:

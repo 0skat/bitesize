@@ -20,12 +20,18 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn
 
 from ai_locale import epub_label, format_digest_timestamp
 from config import console, get_settings, load_env, OUTPUT_DIR
-from feed import fetch_feed, fetch_article_content, filter_headline_only
+from feed import (
+    dedupe_articles,
+    fetch_article_content,
+    fetch_feed,
+    filter_headline_only,
+)
 from paywall import log_summary, reset_stats
 from gemini import (
     article_relevance,
     generate_global_cover,
     generate_section_cover,
+    prefilter_by_title,
     process_articles,
 )
 from magazine_layers import article_rank_sort_key
@@ -52,6 +58,15 @@ def _log_headline_drops(dropped: list[dict]) -> None:
         f"(no body text or summary):[/dim]"
     )
     for source, count in by_source.most_common():
+        console.print(f"  [dim]   · {source}: {count}[/dim]")
+
+
+def _log_dedupe(dropped: list[dict]) -> None:
+    if not dropped:
+        return
+    by_source = Counter(art.get("source", "?") for art in dropped)
+    console.print(f"  [dim]✗  dropped {len(dropped)} duplicate(s):[/dim]")
+    for source, count in by_source.most_common(5):
         console.print(f"  [dim]   · {source}: {count}[/dim]")
 
 
@@ -225,6 +240,29 @@ def main() -> None:
     total_raw = sum(len(v) for v in raw_sections.values())
     if selected:
         console.print(f"[green]✓[/green]  Fetched [bold]{total_raw}[/bold] raw articles")
+
+        # ── 1.5 Drop cross-feed duplicates, then screen on titles ─────────────
+        # Both run before the body fetch so a rejected story costs neither a
+        # network round trip nor an AI call.
+        flat_raw = [art for arts in raw_sections.values() for art in arts]
+        flat_raw, dupes = dedupe_articles(flat_raw)
+        _log_dedupe(dupes)
+
+        screened, screened_out = prefilter_by_title(
+            flat_raw, settings.prefilter_keep
+        )
+        if screened_out:
+            console.print(
+                f"  [dim]✗  screened out {len(screened_out)} by title "
+                f"(kept {len(screened)})[/dim]"
+            )
+
+        raw_sections = {cat: [] for cat in selected}
+        for art in screened:
+            cat = art.get("category", "")
+            if cat in raw_sections:
+                raw_sections[cat].append(art)
+        total_raw = sum(len(v) for v in raw_sections.values())
 
     # ── 2. Fetch full article content in parallel ─────────────────────────────
     if selected:

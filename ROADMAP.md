@@ -15,6 +15,7 @@ The morning pipeline is in daily use: RSS → full text → AI filter/summarize/
 - **pt-BR tags** on each story: `resumo` vs `artigo-completo`, plus temas from a fixed list. Heuristics run when the AI is down.
 - **Scoring:** fallback stays below 70; cover and section leads prefer AI scores over length stand-ins; clustered AI batches get one listwise re-rank.
 - **A smaller, personal morning book.** `user_interests` scores stories on fit to the reader instead of general newsworthiness, on an absolute scale; `min_keep_score` and `max_articles_per_issue` trim the issue. Setting interests disables the forced score spread and the clustered listwise re-rank, both of which assume batch-relative scoring. `output_keep_issues` prunes `output/`.
+- **Two-pass filtering.** `prefilter_keep` screens titles (sixty per AI call) before any body fetch, so only likely-relevant stories are fetched and summarised. Cross-feed duplicates are dropped in the same pass.
 - **Claude Code CLI backend** (`ai_backend=claude`), on the existing two-function transport contract. Uses the operator's subscription unless `ANTHROPIC_API_KEY` is set.
 - **Spanish labels**, and `summary_language` splits summary language from book chrome (`source` keeps each summary in its article's own language).
 - **Open-source hygiene:** MIT license, `SECURITY.md`, pytest + coverage + pip-audit + gitleaks CI, Dependabot, GitHub issue templates.
