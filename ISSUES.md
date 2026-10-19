@@ -9,12 +9,12 @@ Open problems seen in the running app. There is no GitHub issue tracker yet. Clo
 
 Seen on 29–30 August 2026 in `output/logs/digest-stdout.log`. Hypothesis: timeout or model error on large batches, not a missing CLI (later calls in the same run succeed).
 
-## AP News feed returns 403
+## AP News feed is dead
 
 **Expected:** The World “AP News” source contributes headlines.  
-**Actual:** Fetch logs `403 Forbidden` for `https://apnews.com/hub/apf-topnews?format=rss`. The other World feeds still run.
+**Actual:** `https://apnews.com/hub/apf-topnews?format=rss` yields zero articles. It previously logged `403 Forbidden`; as of 19 October 2026 it fails earlier, in the parser — `not well-formed (invalid token)` — so the URL is serving something that is not RSS at all.
 
-The feed stays enabled in the dashboard. Hypothesis: AP is blocking the default user agent or that hub URL is no longer a public RSS.
+**Now disabled in the dashboard** rather than left enabled to fail every morning. The other World feeds are unaffected. Re-enabling needs a current AP feed URL; the `apf-topnews` hub no longer appears to be one.
 
 ## Paywall mirrors almost never help
 
