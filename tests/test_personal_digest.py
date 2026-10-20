@@ -617,3 +617,50 @@ def test_prefilter_batch_size_is_configurable(isolated_store, monkeypatch):
 
     gemini.prefilter_by_title(_titled(269), 80)
     assert calls == [150, 119], calls
+
+
+def test_thinking_is_disabled_by_default_in_the_claude_env(isolated_store, monkeypatch):
+    """Thinking dominated output billing; the backend must switch it off."""
+    store.init_db()
+    _reload(monkeypatch)
+
+    import claude_backend
+
+    seen = {}
+
+    class R:
+        returncode = 0
+        stdout = '{"subtype":"success","is_error":false,"result":"OK","usage":{}}'
+        stderr = ""
+
+    def fake_run(cmd, **kw):
+        seen["env"] = kw.get("env") or {}
+        return R()
+
+    monkeypatch.setattr(claude_backend.subprocess, "run", fake_run)
+    monkeypatch.setattr(claude_backend, "_record_usage", lambda *a, **k: None)
+
+    assert claude_backend.call("do a thing", "") == "OK"
+    assert seen["env"]["MAX_THINKING_TOKENS"] == "0"
+
+
+def test_thinking_budget_is_configurable(isolated_store, monkeypatch):
+    store.init_db()
+    store.set_setting("claude_thinking_tokens", 4000)
+    _reload(monkeypatch)
+
+    import claude_backend
+
+    seen = {}
+
+    class R:
+        returncode = 0
+        stdout = '{"subtype":"success","is_error":false,"result":"OK","usage":{}}'
+        stderr = ""
+
+    monkeypatch.setattr(claude_backend.subprocess, "run",
+                        lambda cmd, **kw: (seen.update(env=kw.get("env") or {}), R())[1])
+    monkeypatch.setattr(claude_backend, "_record_usage", lambda *a, **k: None)
+
+    claude_backend.call("do a thing", "")
+    assert seen["env"]["MAX_THINKING_TOKENS"] == "4000"

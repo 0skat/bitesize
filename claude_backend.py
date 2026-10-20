@@ -1,6 +1,7 @@
 """Claude Code CLI (claude) transport backend."""
 
 import json
+import os
 import re
 import subprocess
 import time
@@ -110,6 +111,12 @@ def call(instruction: str, stdin_data: str, label: str = "") -> Optional[str]:
     timeout = settings.claude_timeout
     prompt = f"{instruction}\n\n{stdin_data}" if stdin_data else instruction
 
+    # The CLI turns extended thinking on by default. Nothing this backend asks
+    # for benefits from it — every prompt wants a JSON array back — and it
+    # dominated output billing until it was switched off.
+    env = dict(os.environ)
+    env["MAX_THINKING_TOKENS"] = str(max(0, settings.claude_thinking_tokens))
+
     started = time.monotonic()
     try:
         result = subprocess.run(
@@ -130,6 +137,7 @@ def call(instruction: str, stdin_data: str, label: str = "") -> Optional[str]:
             capture_output=True,
             text=True,
             timeout=timeout + 30,
+            env=env,
         )
         if result.returncode != 0:
             console.print(

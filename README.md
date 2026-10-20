@@ -119,6 +119,28 @@ Cross-feed duplicates are removed in the same place, before the body fetch. Over
 
 `ai_backend=claude` drives the [Claude Code](https://claude.com/claude-code) CLI. With no `ANTHROPIC_API_KEY` set it uses your existing Claude subscription rather than per-token API billing; setting that variable switches it to the metered API. The backend strips the CLI's coding-agent system prompt and tool catalogue (`--restricted`, `--strict-mcp-config`, `--exclude-dynamic-system-prompt-sections`), which cuts per-call overhead from roughly 19k tokens to 6k. `claude_model` defaults to Haiku, which is enough for batch JSON.
 
+### Keeping AI usage down
+
+The Claude backend draws on a subscription, so cost is measured in usage, not dollars. Upstream's shape was expensive in two ways that are easy to miss, and both were found by measuring rather than reasoning.
+
+**Thinking was most of the bill.** The CLI enables extended thinking by default. Every prompt here asks for a JSON array, so none of it helps. On a ten-article batch, thinking was 1,515 of 2,139 output tokens — 20.4s instead of 8.7s, for identical output. `claude_thinking_tokens` defaults to 0 and sets `MAX_THINKING_TOKENS` on the call. Raise it only if summary quality drops.
+
+**Covers were nearly half the calls.** A run made 16 AI calls: five to screen titles, four to summarise, and **seven for covers** — one per section plus a global pass. `epub.py` already builds a readable fallback cover without AI, so `ai_covers_enabled=false` removes seven calls for no loss of article content. `prefilter_batch_size` (150) takes the title screen from five calls to two.
+
+Measured on a 45-feed, 269-article run, both at six calls:
+
+| | calls | input (incl. cache) | output | wall time |
+| --- | --- | --- | --- | --- |
+| Thinking on | 6 | 54,265 | 62,014 | 7.8 min |
+| Thinking off | 6 | 53,200 | **11,778** | **1.6 min** |
+
+Two things worth knowing before trying to reason about this yourself:
+
+- **The prompt cache never helps.** Each `claude -p` is a fresh process, so `cache_read` is 0 on every call while `cache_write` is paid every time — and cache writes cost *more* than plain input. Fewer, larger calls is the only lever on input.
+- **Measure, do not estimate.** Both intuitions above ("overhead dominates", "caching amortises it") were wrong in opposite directions. `claude_backend` appends real per-call token counts to `output/logs/ai-usage.jsonl`; `python scripts/ai-usage.py --calls` totals them by day or call kind.
+
+If usage is still too high, `ai_backend=ollama` removes it entirely. On Apple silicon with 24 GB, `qwen2.5:14b` is a better choice than the repo's default `llama3:8b` — it follows JSON instructions more reliably, which is all this pipeline asks of a model.
+
 ### Keeping storage flat
 
 Upstream keeps every EPUB in `output/` forever. `output_keep_issues` prunes to the newest N after each successful run (0 keeps everything, the old behaviour).

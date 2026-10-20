@@ -21,6 +21,10 @@ SETTINGS_DEFAULTS: dict[str, tuple[str, str, Any]] = {
     "ollama_timeout": ("ai", "int", 120),
     "claude_model": ("ai", "str", "claude-haiku-4-5-20251001"),
     "claude_timeout": ("ai", "int", 180),
+    # Extended-thinking budget for the Claude backend. Every call here is
+    # mechanical JSON, so thinking is pure cost: on a 10-article batch it was
+    # 1,515 of 2,139 output tokens, 20.4s vs 8.7s, for identical output. 0 off.
+    "claude_thinking_tokens": ("ai", "int", 0),
     "gemini_batch_size": ("ai", "int", 20),
     # Titles screened per AI call. Far larger than the summarising batch because
     # a title costs a fraction of an article preview.
@@ -85,6 +89,7 @@ class Settings:
     ollama_timeout: int = 120
     claude_model: str = "claude-haiku-4-5-20251001"
     claude_timeout: int = 180
+    claude_thinking_tokens: int = 0
     gemini_batch_size: int = 20
     prefilter_batch_size: int = 60
     ai_covers_enabled: bool = True
@@ -249,6 +254,7 @@ _ENV_TO_SETTING = {
     "PREFILTER_BATCH_SIZE": "prefilter_batch_size",
     "CLAUDE_MODEL": "claude_model",
     "CLAUDE_TIMEOUT": "claude_timeout",
+    "CLAUDE_THINKING_TOKENS": "claude_thinking_tokens",
     "SUMMARY_LANGUAGE": "summary_language",
     "USER_INTERESTS": "user_interests",
     "MIN_KEEP_SCORE": "min_keep_score",
