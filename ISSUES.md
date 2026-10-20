@@ -75,6 +75,18 @@ Same root cause as the books-toggle issue: the dashboard has no per-key widget m
 
 Only reachable when the direct parse fails, i.e. when the model wraps its reply in a markdown fence. The Claude backend strips a wrapping fence before returning (`claude_backend._strip_code_fence`) so the direct parse wins; the docstring claims fence tolerance that the function does not actually implement. A backend-agnostic fix would try the object pattern first, or strip fences inside `_extract_json`.
 
+## The daily run stalls when the Mac sleeps
+
+**Expected:** The 06:50 LaunchAgent produces a finished EPUB each morning.
+
+**Actual (20 October 2026):** The job started at ~06:57, the Mac went into Deep Idle sleep mid-run, and the process sat at 0% CPU for roughly 100 minutes with its network calls failing — one `Claude call timed out (180s)` in the log. `pmset -g log` shows `Wake from Deep Idle ... due to ... UserActivity` at 08:40:05, which is when the run resumed. Wall-clock elapsed time is therefore misleading: a run that looks like it has hung for two hours may just be parked.
+
+The AI backend itself was fine throughout — a trivial `claude -p` probe during the stall returned in 2.4s, so this is not throttling or a usage limit.
+
+**Partly fixed:** the LaunchAgent now runs under `caffeinate -i`, which holds off idle sleep once the job has started. That does **not** wake a Mac that is already asleep at 06:50. `launchd` will run a missed `StartCalendarInterval` job when the machine next wakes, so the digest still arrives — just late, and tied to when someone opens the laptop.
+
+**Still open:** waking the machine needs `sudo pmset repeat wakeorpoweron MTWRFSU 06:45:00`, which the install script prints but cannot run for you. On a desktop that never sleeps, none of this applies.
+
 ## Closed here on purpose (do not re-open from old plans)
 
 These were open in `docs/superpowers/plans/2026-05-26-open-source-security-readiness.md`. The code has moved on:

@@ -23,8 +23,15 @@ cat > "${PLIST}" <<EOF
 <dict>
   <key>Label</key>
   <string>${LABEL}</string>
+  <!-- caffeinate -i holds off idle sleep for as long as the digest runs. A
+       laptop that sleeps mid-run leaves the job parked at 0% CPU with its
+       network calls timing out, resuming only when someone touches the
+       machine. This does not wake a Mac that is already asleep at 06:50 -
+       see the pmset note this script prints. -->
   <key>ProgramArguments</key>
   <array>
+    <string>/usr/bin/caffeinate</string>
+    <string>-i</string>
     <string>${VENV_PY}</string>
     <string>${ROOT}/main.py</string>
     <string>--all</string>
@@ -50,7 +57,16 @@ launchctl unload "${PLIST}" 2>/dev/null || true
 launchctl load -w "${PLIST}"
 
 echo "Installed ${PLIST}"
-echo "  Runs daily at 6:50 AM: ${VENV_PY} ${ROOT}/main.py --all"
+echo "  Runs daily at 6:50 AM: caffeinate -i ${VENV_PY} ${ROOT}/main.py --all"
 echo "  Delivers EPUB to Kindle (if configured) and copies to iCloud Books for iPhone sync"
 echo "  Logs: ${ROOT}/output/logs/digest-stdout.log (and digest-stderr.log)"
 echo "  Uninstall: launchctl unload \"${PLIST}\" && rm \"${PLIST}\""
+echo
+echo "  NOTE: launchd cannot run this on a sleeping Mac. caffeinate keeps the"
+echo "  machine awake once the job has started, but something has to wake it"
+echo "  first. Schedule that yourself (needs sudo, asks for your password):"
+echo
+echo "      sudo pmset repeat wakeorpoweron MTWRFSU 06:45:00"
+echo
+echo "  Check with 'pmset -g sched'; clear with 'sudo pmset repeat cancel'."
+echo "  Without it, a missed run starts whenever the Mac next wakes."
