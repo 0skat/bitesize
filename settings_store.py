@@ -22,6 +22,13 @@ SETTINGS_DEFAULTS: dict[str, tuple[str, str, Any]] = {
     "claude_model": ("ai", "str", "claude-haiku-4-5-20251001"),
     "claude_timeout": ("ai", "int", 180),
     "gemini_batch_size": ("ai", "int", 20),
+    # Titles screened per AI call. Far larger than the summarising batch because
+    # a title costs a fraction of an article preview.
+    "prefilter_batch_size": ("ai", "int", 60),
+    # AI-written section and global covers are decoration: a readable fallback
+    # cover is built without them. They cost one call per section plus one, so
+    # turning them off is the cheapest large saving available.
+    "ai_covers_enabled": ("ai", "bool", True),
     "gemini_timeout": ("ai", "int", 120),
     "gemini_check_timeout": ("ai", "int", 6),
     "ai_language": ("ai", "str", "pt-BR"),
@@ -79,6 +86,8 @@ class Settings:
     claude_model: str = "claude-haiku-4-5-20251001"
     claude_timeout: int = 180
     gemini_batch_size: int = 20
+    prefilter_batch_size: int = 60
+    ai_covers_enabled: bool = True
     gemini_timeout: int = 120
     gemini_check_timeout: int = 6
     ai_language: str = "pt-BR"
@@ -236,6 +245,8 @@ _ENV_TO_SETTING = {
     "AI_BACKEND": "ai_backend",
     "ANTIGRAVITY_MODEL": "antigravity_model",
     "AI_LANGUAGE": "ai_language",
+    "AI_COVERS_ENABLED": "ai_covers_enabled",
+    "PREFILTER_BATCH_SIZE": "prefilter_batch_size",
     "CLAUDE_MODEL": "claude_model",
     "CLAUDE_TIMEOUT": "claude_timeout",
     "SUMMARY_LANGUAGE": "summary_language",

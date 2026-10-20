@@ -3,6 +3,7 @@
 import json
 import re
 import subprocess
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -58,6 +59,33 @@ def _strip_code_fence(text: str) -> str:
     return match.group("body").strip() if match else text
 
 
+# Every call's token counts are appended here so real usage can be totted up
+# after a run instead of estimated. One JSON object per line.
+_USAGE_LOG = Path(__file__).parent / "output" / "logs" / "ai-usage.jsonl"
+
+
+def _record_usage(data: dict, label: str, model: str, elapsed: float) -> None:
+    """Append one call's token usage. Never raises — logging must not break a run."""
+    try:
+        usage = data.get("usage") or {}
+        _USAGE_LOG.parent.mkdir(parents=True, exist_ok=True)
+        row = {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "label": label or "-",
+            "model": model,
+            "in": usage.get("input_tokens", 0),
+            "cache_write": usage.get("cache_creation_input_tokens", 0),
+            "cache_read": usage.get("cache_read_input_tokens", 0),
+            "out": usage.get("output_tokens", 0),
+            "cost_usd": data.get("total_cost_usd", 0),
+            "secs": round(elapsed, 1),
+        }
+        with _USAGE_LOG.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row) + "\n")
+    except Exception:
+        pass
+
+
 def available() -> bool:
     """Return True if the claude CLI is reachable."""
     global _CLAUDE_OK
@@ -82,6 +110,7 @@ def call(instruction: str, stdin_data: str, label: str = "") -> Optional[str]:
     timeout = settings.claude_timeout
     prompt = f"{instruction}\n\n{stdin_data}" if stdin_data else instruction
 
+    started = time.monotonic()
     try:
         result = subprocess.run(
             [
@@ -110,6 +139,7 @@ def call(instruction: str, stdin_data: str, label: str = "") -> Optional[str]:
             return None
 
         data = json.loads(result.stdout)
+        _record_usage(data, label, model, time.monotonic() - started)
         if data.get("is_error") or data.get("subtype") != "success":
             console.print(
                 f"  [yellow]⚠  {tag}Claude returned "

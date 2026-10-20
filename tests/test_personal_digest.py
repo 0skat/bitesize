@@ -554,3 +554,66 @@ def test_prefilter_still_prefers_higher_scores_over_spread(isolated_store, monke
     )
     kept, _ = gemini.prefilter_by_title(arts, 4)
     assert all(a["category"] == "Soccer" for a in kept), [a["category"] for a in kept]
+
+
+# ── Cover toggle (usage control) ────────────────────────────────────────────
+
+
+def test_ai_covers_can_be_turned_off(isolated_store, monkeypatch):
+    """Covers are decoration; turning them off must cost zero AI calls."""
+    store.init_db()
+    store.set_setting("ai_covers_enabled", False)
+    _reload(monkeypatch)
+
+    import gemini
+
+    called = []
+    monkeypatch.setattr(gemini, "_call_ai", lambda *a, **k: called.append(1) or None)
+    monkeypatch.setattr(gemini, "_ai_available", lambda: True)
+
+    arts = [{"title": "T", "summary": "S", "url": "u", "content": "c" * 300}]
+    assert gemini.generate_section_cover("Tech", arts) == {}
+    assert gemini.generate_global_cover({"Tech": {"headline": "H"}}) == {}
+    assert called == [], "no AI call may be made when covers are disabled"
+
+
+def test_ai_covers_on_by_default_still_call(isolated_store, monkeypatch):
+    store.init_db()
+    _reload(monkeypatch)
+
+    import gemini
+
+    called = []
+
+    def fake(*a, **k):
+        called.append(1)
+        return None  # falls back, but the call was attempted
+
+    monkeypatch.setattr(gemini, "_call_ai", fake)
+    monkeypatch.setattr(gemini, "_ai_available", lambda: True)
+    gemini.generate_section_cover("Tech", [{"title": "T", "summary": "S",
+                                            "url": "u", "content": "c" * 300}])
+    assert called, "default behaviour is unchanged from upstream"
+
+
+def test_prefilter_batch_size_is_configurable(isolated_store, monkeypatch):
+    store.init_db()
+    store.set_setting("user_interests", "soccer")
+    store.set_setting("prefilter_batch_size", 150)
+    _reload(monkeypatch)
+
+    import gemini
+    import json, re
+
+    calls = []
+
+    def fake(instruction, block, label=""):
+        ids = [int(m) for m in re.findall(r"^\[(\d+)\]", block, re.M)]
+        calls.append(len(ids))
+        return json.dumps([{"id": i, "score": 70} for i in ids])
+
+    monkeypatch.setattr(gemini, "_ai_available", lambda: True)
+    monkeypatch.setattr(gemini, "_call_ai", fake)
+
+    gemini.prefilter_by_title(_titled(269), 80)
+    assert calls == [150, 119], calls

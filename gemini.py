@@ -206,11 +206,11 @@ def prefilter_by_title(
         )
         return articles, []
 
+    batch_size = max(1, get_settings().prefilter_batch_size)
     scores: dict[int, int] = {}
-    batches = range(0, len(articles), PREFILTER_BATCH_SIZE)
-    for start in batches:
-        batch = articles[start : start + PREFILTER_BATCH_SIZE]
-        label = f"prefilter-{start // PREFILTER_BATCH_SIZE + 1}"
+    for start in range(0, len(articles), batch_size):
+        batch = articles[start : start + batch_size]
+        label = f"prefilter-{start // batch_size + 1}"
         title_block = "".join(
             f'[{i}] "{art.get("title", "")}"\n' for i, art in enumerate(batch)
         )
@@ -483,6 +483,9 @@ def generate_section_cover(category: str, articles: list[dict]) -> dict:
         "top_stories": [{"title": str, "one_liner": str}, ...] }
     Falls back to {} on any failure.
     """
+    if not get_settings().ai_covers_enabled:
+        return {}
+
     label = f"section-cover:{category}"
 
     if not _ai_available():
@@ -534,6 +537,9 @@ def generate_global_cover(section_covers: dict[str, dict]) -> dict:
         "highlights": [{"section": str, "headline": str, "story": str}, ...] }
     Falls back to {} on any failure.
     """
+    if not get_settings().ai_covers_enabled:
+        return {}
+
     label = "global-cover"
 
     if not _ai_available():
