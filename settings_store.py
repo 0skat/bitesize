@@ -70,6 +70,10 @@ SETTINGS_DEFAULTS: dict[str, tuple[str, str, Any]] = {
     # Screen on titles first and carry only this many into the body fetch and
     # the summarising pass. 0 disables the screen (every article is summarised).
     "prefilter_keep": ("filter", "int", 0),
+    # Reserve this many slots in the screen for every section's best headlines.
+    # min_section_stories can only rescue stories that survive the screen, so
+    # without this a small section can be gone before the keep-list ever runs.
+    "prefilter_min_per_section": ("filter", "int", 0),
     "index_entries_per_page": ("epub", "int", 10),
     "top_picks_on_cover": ("epub", "int", 6),
     # Keep only the newest N EPUBs in output/. 0 keeps every issue forever.
@@ -122,6 +126,7 @@ class Settings:
     min_section_stories: int = 0
     overflow_section_max: int = 0
     prefilter_keep: int = 0
+    prefilter_min_per_section: int = 0
     index_entries_per_page: int = 10
     top_picks_on_cover: int = 6
     output_keep_issues: int = 0
@@ -278,6 +283,7 @@ _ENV_TO_SETTING = {
     "MIN_SECTION_STORIES": "min_section_stories",
     "OVERFLOW_SECTION_MAX": "overflow_section_max",
     "PREFILTER_KEEP": "prefilter_keep",
+    "PREFILTER_MIN_PER_SECTION": "prefilter_min_per_section",
     "OUTPUT_KEEP_ISSUES": "output_keep_issues",
     "OLLAMA_HOST": "ollama_host",
     "OLLAMA_MODEL": "ollama_model",

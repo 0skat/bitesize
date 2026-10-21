@@ -244,15 +244,30 @@ def prefilter_by_title(
         for position, i in enumerate(members):
             rank_in_section[i] = position
 
-    ranked = sorted(
-        range(len(articles)),
-        key=lambda i: (
-            -scores.get(i, PREFILTER_NEUTRAL_SCORE),
-            rank_in_section[i],
-            i,
-        ),
-    )
-    keep_idx = set(ranked[:keep])
+    def _score_order(i: int) -> tuple:
+        return (-scores.get(i, PREFILTER_NEUTRAL_SCORE), rank_in_section[i], i)
+
+    ranked = sorted(range(len(articles)), key=_score_order)
+
+    # Interleaving only helps where scores tie. A section whose headlines all
+    # score below the cut line is gone before the keep-list runs, and
+    # min_section_stories cannot rescue what never survived the screen — that
+    # is how México disappeared from an otherwise balanced issue. Reserve each
+    # section's best few here so the later per-section floor has something to
+    # work with.
+    reserved: list[int] = []
+    floor = max(0, get_settings().prefilter_min_per_section)
+    if floor:
+        for members in by_section.values():
+            reserved.extend(members[:floor])
+        # More reservations than slots: keep the best-scoring of them.
+        reserved = sorted(reserved, key=_score_order)[:keep]
+
+    keep_idx = set(reserved)
+    for i in ranked:
+        if len(keep_idx) >= keep:
+            break
+        keep_idx.add(i)
     kept = [art for i, art in enumerate(articles) if i in keep_idx]
     dropped = [art for i, art in enumerate(articles) if i not in keep_idx]
     return kept, dropped

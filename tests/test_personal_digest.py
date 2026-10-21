@@ -824,3 +824,127 @@ def test_min_section_stories_alone_still_filters(isolated_store, monkeypatch):
     assert "a" in titles          # clears the bar
     assert "c" in titles          # section Y's best, spared
     assert "b" not in titles      # section X already had its one
+
+
+# ── Title-screen per-section floor ──────────────────────────────────────────
+
+
+def _secart(i, category):
+    return {"title": f"{category} story {i}", "url": f"http://{category}/{i}",
+            "category": category}
+
+
+def _score_by_section(gemini, monkeypatch, table):
+    """Score every title purely by its section, via the real batching path."""
+    import json, re
+
+    def fake(instruction, block, label=""):
+        out = []
+        for line in block.splitlines():
+            m = re.match(r'\[(\d+)\] "(\w+)', line)
+            if m:
+                out.append({"id": int(m.group(1)), "score": table[m.group(2)]})
+        return json.dumps(out)
+
+    monkeypatch.setattr(gemini, "_ai_available", lambda: True)
+    monkeypatch.setattr(gemini, "_call_ai", fake)
+
+
+def test_screen_starves_a_weak_section_without_the_floor(isolated_store, monkeypatch):
+    """Documents the México bug: no floor means the section vanishes."""
+    store.init_db()
+    store.set_setting("user_interests", "tech")
+    _reload(monkeypatch)
+
+    import gemini
+
+    _score_by_section(gemini, monkeypatch, {"Tech": 90, "Mexico": 40})
+    arts = ([_secart(i, "Tech") for i in range(10)]
+            + [_secart(i, "Mexico") for i in range(3)])
+
+    kept, _ = gemini.prefilter_by_title(arts, 5)
+    assert all(a["category"] == "Tech" for a in kept)
+
+
+def test_floor_reserves_a_slot_for_every_section(isolated_store, monkeypatch):
+    store.init_db()
+    store.set_setting("user_interests", "tech")
+    store.set_setting("prefilter_min_per_section", 2)
+    _reload(monkeypatch)
+
+    import gemini
+
+    _score_by_section(gemini, monkeypatch, {"Tech": 90, "Mexico": 40})
+    arts = ([_secart(i, "Tech") for i in range(10)]
+            + [_secart(i, "Mexico") for i in range(3)])
+
+    kept, dropped = gemini.prefilter_by_title(arts, 5)
+    cats = [a["category"] for a in kept]
+    assert cats.count("Mexico") == 2, cats
+    assert cats.count("Tech") == 3, cats
+    assert len(kept) == 5
+    assert len(dropped) == 8
+
+
+def test_floor_takes_only_each_section_best(isolated_store, monkeypatch):
+    store.init_db()
+    store.set_setting("user_interests", "tech")
+    store.set_setting("prefilter_min_per_section", 1)
+    _reload(monkeypatch)
+
+    import gemini
+    import json, re
+
+    # Within Mexico, story 0 scores best.
+    def fake(instruction, block, label=""):
+        out = []
+        for line in block.splitlines():
+            m = re.match(r'\[(\d+)\] "(\w+) story (\d+)', line)
+            if m:
+                base = 90 if m.group(2) == "Tech" else 40
+                out.append({"id": int(m.group(1)), "score": base - int(m.group(3))})
+        return json.dumps(out)
+
+    monkeypatch.setattr(gemini, "_ai_available", lambda: True)
+    monkeypatch.setattr(gemini, "_call_ai", fake)
+
+    arts = ([_secart(i, "Tech") for i in range(5)]
+            + [_secart(i, "Mexico") for i in range(3)])
+    kept, _ = gemini.prefilter_by_title(arts, 4)
+    mex = [a["title"] for a in kept if a["category"] == "Mexico"]
+    assert mex == ["Mexico story 0"], mex
+
+
+def test_floor_never_exceeds_the_keep_count(isolated_store, monkeypatch):
+    """Many sections with a generous floor must not overflow the budget."""
+    store.init_db()
+    store.set_setting("user_interests", "tech")
+    store.set_setting("prefilter_min_per_section", 3)
+    _reload(monkeypatch)
+
+    import gemini
+
+    table = {f"Sec{n}": 50 + n for n in range(8)}
+    _score_by_section(gemini, monkeypatch, table)
+    arts = [_secart(i, sec) for sec in table for i in range(4)]
+
+    kept, dropped = gemini.prefilter_by_title(arts, 6)
+    assert len(kept) == 6
+    assert len(kept) + len(dropped) == len(arts)
+    # The budget goes to the strongest sections when it cannot cover them all.
+    assert {a["category"] for a in kept} <= set(table)
+
+
+def test_floor_is_inert_when_the_screen_is_off(isolated_store, monkeypatch):
+    store.init_db()
+    store.set_setting("user_interests", "tech")
+    store.set_setting("prefilter_min_per_section", 2)
+    _reload(monkeypatch)
+
+    import gemini
+
+    called = []
+    monkeypatch.setattr(gemini, "_call_ai", lambda *a, **k: called.append(1) or None)
+    arts = [_secart(i, "Tech") for i in range(5)]
+    kept, dropped = gemini.prefilter_by_title(arts, 0)
+    assert kept == arts and dropped == [] and called == []

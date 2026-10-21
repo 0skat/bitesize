@@ -87,6 +87,7 @@ This fork adds three settings that turn that into a personal digest.
 | `min_keep_score` | Drop anything below this score. Only meaningful once `user_interests` is set, because only then is the scale absolute. |
 | `max_articles_per_issue` | Hard cap, highest score first. |
 | `prefilter_keep` | Screen on titles first and carry only this many into the body fetch and the summarising pass. 0 disables it. |
+| `prefilter_min_per_section` | Reserve this many title-screen slots per section, so small sections survive to the keep-list. |
 | `min_section_stories` | Admit this many best stories per section even below `min_keep_score`. |
 | `balance_sections` | Fill the cap round-robin across sections instead of by absolute score. |
 | `overflow_section_max` | Publish the stories that lost their slot as a trailing "Also considered" section. |
@@ -112,8 +113,11 @@ The rescued stories score 6.5–7.8 — well under the threshold, and precisely 
 
 `overflow_section_max` publishes what lost its slot as a trailing "Also considered" section, best-scoring first. Those stories are already summarised, so carrying them costs EPUB bytes and no AI calls.
 
-> [!NOTE]
-> A section can still be missing if the **title screen** starved it before any of this runs: `prefilter_keep` interleaves sections only at equal scores, and has no guaranteed per-section minimum of its own.
+A section can still go missing one stage earlier. The title screen cuts on score too, and interleaves only at equal scores, so a section whose headlines all read weakly is gone before the keep-list runs — `min_section_stories` cannot rescue what never survived the screen. `prefilter_min_per_section` reserves screen slots for each section's best headlines; when reservations exceed `prefilter_keep`, the best-scoring reservations win rather than overflowing the budget.
+
+With all three set, every configured section reached the issue:
+
+`Soccer 4, Opinion 3, Science 3, Tech 3, Agriculture 2, Art 2, Español 2, México 2, US Politics 2, World 2`
 
 ### Two passes, not one
 
