@@ -87,6 +87,9 @@ This fork adds three settings that turn that into a personal digest.
 | `min_keep_score` | Drop anything below this score. Only meaningful once `user_interests` is set, because only then is the scale absolute. |
 | `max_articles_per_issue` | Hard cap, highest score first. |
 | `prefilter_keep` | Screen on titles first and carry only this many into the body fetch and the summarising pass. 0 disables it. |
+| `min_section_stories` | Admit this many best stories per section even below `min_keep_score`. |
+| `balance_sections` | Fill the cap round-robin across sections instead of by absolute score. |
+| `overflow_section_max` | Publish the stories that lost their slot as a trailing "Also considered" section. |
 
 With interests set, scores separate sharply — stories squarely in your interests land in the 85–100 band and off-topic ones fall below 30 — so a `min_keep_score` around 55–65 is usually the right starting point. Watch one run's scores before tightening it. If the threshold ever drops everything, the run keeps the five best stories and warns you rather than writing an empty book.
 
@@ -94,6 +97,23 @@ Two related behaviours change when `user_interests` is set:
 
 - The **forced score spread** is dropped. Upstream requires one in five stories above 80 and one in five below 45 in every batch; that is wrong here, because a batch of twenty stories you do not care about should be allowed to score low across the board.
 - The **clustered listwise re-rank** is skipped. It exists to spread out bunched-up scores, which would lift off-topic stories back over your threshold — and it costs an extra AI call per clustered batch.
+
+### Why a balanced issue needs two settings, not one
+
+Ranking by absolute score hands the issue to whichever sections score well every day. On a real run that was `Opinion 9, Tech 6, Science 4, Soccer 3, World 2, Español 1` — and nothing at all from Agriculture, Art, US Politics or México.
+
+`balance_sections` fills the cap round-robin instead: sections are visited strongest-first by their own lead story, then cycled, so every section's lead is in before any section's second. On its own that **did not fix it** — Opinion still took 9 of 25.
+
+The cap was never the real constraint. `min_keep_score` was. An art review or a planting guide rarely out-scores AI commentary when both are judged against the same interests, so those sections were already empty by the time balancing ran. `min_section_stories` admits each section's best few regardless of the threshold; they then compete on score like everything else. With both set, the same feeds produced:
+
+`Tech 4, Science 4, Soccer 4, Opinion 4, Español 2, World 2, Agriculture 2, Art 2, US Politics 1`
+
+The rescued stories score 6.5–7.8 — well under the threshold, and precisely the ones that were being dropped.
+
+`overflow_section_max` publishes what lost its slot as a trailing "Also considered" section, best-scoring first. Those stories are already summarised, so carrying them costs EPUB bytes and no AI calls.
+
+> [!NOTE]
+> A section can still be missing if the **title screen** starved it before any of this runs: `prefilter_keep` interleaves sections only at equal scores, and has no guaranteed per-section minimum of its own.
 
 ### Two passes, not one
 

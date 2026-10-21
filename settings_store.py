@@ -55,6 +55,18 @@ SETTINGS_DEFAULTS: dict[str, tuple[str, str, Any]] = {
     "min_keep_score": ("filter", "int", 0),
     # Hard cap on stories per issue, highest score first. 0 means unlimited.
     "max_articles_per_issue": ("filter", "int", 0),
+    # Fill the cap round-robin across sections instead of taking the highest
+    # absolute scores. Without it, whichever sections score well every day take
+    # the whole issue and narrower interests never appear.
+    "balance_sections": ("filter", "bool", False),
+    # Admit this many best stories from every section even when they fall below
+    # min_keep_score. Without it a global threshold silently deletes whole
+    # interest areas — art and agriculture rarely out-score AI commentary — and
+    # section balancing then has nothing from them left to balance.
+    "min_section_stories": ("filter", "int", 0),
+    # Stories that cleared min_keep_score but lost their slot to balancing are
+    # collected into a final section, newest-scoring first. 0 discards them.
+    "overflow_section_max": ("filter", "int", 0),
     # Screen on titles first and carry only this many into the body fetch and
     # the summarising pass. 0 disables the screen (every article is summarised).
     "prefilter_keep": ("filter", "int", 0),
@@ -106,6 +118,9 @@ class Settings:
     user_interests: str = ""
     min_keep_score: int = 0
     max_articles_per_issue: int = 0
+    balance_sections: bool = False
+    min_section_stories: int = 0
+    overflow_section_max: int = 0
     prefilter_keep: int = 0
     index_entries_per_page: int = 10
     top_picks_on_cover: int = 6
@@ -259,6 +274,9 @@ _ENV_TO_SETTING = {
     "USER_INTERESTS": "user_interests",
     "MIN_KEEP_SCORE": "min_keep_score",
     "MAX_ARTICLES_PER_ISSUE": "max_articles_per_issue",
+    "BALANCE_SECTIONS": "balance_sections",
+    "MIN_SECTION_STORIES": "min_section_stories",
+    "OVERFLOW_SECTION_MAX": "overflow_section_max",
     "PREFILTER_KEEP": "prefilter_keep",
     "OUTPUT_KEEP_ISSUES": "output_keep_issues",
     "OLLAMA_HOST": "ollama_host",

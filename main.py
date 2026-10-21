@@ -49,6 +49,10 @@ from ui import select_integrations
 _CUSTOM_COVER_SECTIONS = {"Inbox", "Calendar"}
 
 
+def _overflow_section_name() -> str:
+    return epub_label("overflow_section")
+
+
 def _log_headline_drops(dropped: list[dict]) -> None:
     if not dropped:
         return
@@ -75,18 +79,51 @@ def _log_dedupe(dropped: list[dict]) -> None:
 _MIN_FLOOR_ARTICLES = 5
 
 
-def _apply_interest_filter(articles: list[dict]) -> list[dict]:
-    """Drop stories below min_keep_score, then cap at max_articles_per_issue."""
+def _apply_interest_filter(
+    articles: list[dict],
+) -> tuple[list[dict], list[dict]]:
+    """Drop stories below min_keep_score, then fill max_articles_per_issue.
+
+    Returns (kept, overflow). Overflow is what cleared the score threshold but
+    lost its slot to the cap; the caller may publish it as a trailing section.
+    """
     settings = get_settings()
     threshold = settings.min_keep_score
     cap = settings.max_articles_per_issue
+    per_section = settings.min_section_stories
 
-    if threshold <= 0 and cap <= 0:
-        return articles
+    if threshold <= 0 and cap <= 0 and per_section <= 0:
+        return articles, []
+
+    # A global threshold is the real reason sections vanish from the issue, not
+    # the cap: whole interest areas score below it every day. Each section's
+    # best few are admitted regardless so that balancing has something to work
+    # with. They still compete for slots on score once they are in.
+    spared: set[int] = set()
+    if per_section > 0:
+        by_section: dict[str, list[dict]] = {}
+        for art in articles:
+            by_section.setdefault(art.get("category", ""), []).append(art)
+        for arts in by_section.values():
+            arts.sort(key=article_rank_sort_key)
+            for art in arts[:per_section]:
+                spared.add(id(art))
 
     kept = articles
     if threshold > 0:
-        kept = [art for art in articles if article_relevance(art) >= threshold]
+        kept = [
+            art for art in articles
+            if article_relevance(art) >= threshold or id(art) in spared
+        ]
+        rescued = sum(
+            1 for art in kept
+            if article_relevance(art) < threshold and id(art) in spared
+        )
+        if rescued:
+            console.print(
+                f"  [dim]+  {rescued} admitted by min_section_stories="
+                f"{per_section} (below {threshold})[/dim]"
+            )
         dropped = len(articles) - len(kept)
         if not kept and articles:
             kept = sorted(articles, key=article_rank_sort_key)[:_MIN_FLOOR_ARTICLES]
@@ -99,14 +136,64 @@ def _apply_interest_filter(articles: list[dict]) -> list[dict]:
                 f"  [dim]✗  dropped {dropped} below min_keep_score={threshold}[/dim]"
             )
 
+    overflow: list[dict] = []
     if cap > 0 and len(kept) > cap:
         over = len(kept) - cap
-        kept = sorted(kept, key=article_rank_sort_key)[:cap]
-        console.print(
-            f"  [dim]✂  capped to {cap} stories (trimmed {over})[/dim]"
-        )
+        if settings.balance_sections:
+            kept, overflow = _balanced_take(kept, cap)
+            console.print(
+                f"  [dim]✂  balanced to {cap} stories across "
+                f"{len({a.get('category') for a in kept})} sections "
+                f"({over} to overflow)[/dim]"
+            )
+        else:
+            ranked = sorted(kept, key=article_rank_sort_key)
+            kept, overflow = ranked[:cap], ranked[cap:]
+            console.print(f"  [dim]✂  capped to {cap} stories (trimmed {over})[/dim]")
 
-    return kept
+    return kept, overflow
+
+
+def _balanced_take(articles: list[dict], cap: int) -> tuple[list[dict], list[dict]]:
+    """Fill `cap` round-robin across sections. Returns (kept, overflow).
+
+    Taking the highest absolute scores hands the issue to whichever sections
+    score well every day — AI opinion and match reports beat a seed-starting
+    guide every time — so narrower interests never make the book. Sections are
+    visited best-first by their own lead story, then cycled, so every section's
+    lead is in before any section's second story.
+
+    This is a stronger rule than the title screen's tie-break, which only
+    interleaves at equal scores. Here a section with a lower top score still
+    gets a slot.
+    """
+    by_section: dict[str, list[dict]] = {}
+    for art in articles:
+        by_section.setdefault(art.get("category", ""), []).append(art)
+    for arts in by_section.values():
+        arts.sort(key=article_rank_sort_key)
+
+    order = sorted(by_section, key=lambda sec: article_rank_sort_key(by_section[sec][0]))
+
+    kept: list[dict] = []
+    depth = 0
+    while len(kept) < cap:
+        took = False
+        for sec in order:
+            if depth < len(by_section[sec]):
+                kept.append(by_section[sec][depth])
+                took = True
+                if len(kept) >= cap:
+                    break
+        if not took:
+            break
+        depth += 1
+
+    chosen = {id(a) for a in kept}
+    overflow = sorted(
+        (a for a in articles if id(a) not in chosen), key=article_rank_sort_key
+    )
+    return kept, overflow
 
 
 def _prune_old_issues(keep: int) -> None:
@@ -306,6 +393,7 @@ def main() -> None:
 
     # ── 3. AI processing (Gemini) ─────────────────────────────────────────────
     kept_flat: list[dict] = []
+    overflow_flat: list[dict] = []
     processed_sections: dict[str, list] = {}
 
     if selected:
@@ -320,7 +408,7 @@ def main() -> None:
         # ── 3.5 Drop headline-only articles (no readable body or summary) ─────────
         kept_flat, dropped_flat = filter_headline_only(processed_flat)
         _log_headline_drops(dropped_flat)
-        kept_flat = _apply_interest_filter(kept_flat)
+        kept_flat, overflow_flat = _apply_interest_filter(kept_flat)
 
         processed_sections = {cat: [] for cat in selected}
         for art in kept_flat:
@@ -342,6 +430,18 @@ def main() -> None:
         processed_sections["Inbox"] = inbox_articles
     if calendar_articles:
         processed_sections["Calendar"] = calendar_articles
+
+    # Stories that cleared the score threshold but lost their slot to
+    # balancing. They are already summarised, so carrying them costs nothing
+    # but EPUB bytes, and they go last so the balanced issue reads first.
+    overflow_cap = settings.overflow_section_max
+    if overflow_flat and overflow_cap > 0:
+        name = _overflow_section_name()
+        _CUSTOM_COVER_SECTIONS.add(name)
+        processed_sections[name] = overflow_flat[:overflow_cap]
+        console.print(
+            f"  [dim]+  {len(processed_sections[name])} in “{name}”[/dim]"
+        )
 
     if not kept_flat and not inbox_articles and not calendar_articles:
         console.print("[yellow]No readable articles left — exiting.[/yellow]")

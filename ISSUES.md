@@ -87,6 +87,16 @@ The AI backend itself was fine throughout — a trivial `claude -p` probe during
 
 **Still open:** waking the machine needs `sudo pmset repeat wakeorpoweron MTWRFSU 06:45:00`, which the install script prints but cannot run for you. On a desktop that never sleeps, none of this applies.
 
+## The title screen can starve a section before balancing runs
+
+**Expected:** With `min_section_stories` and `balance_sections` set, every configured section reaches the issue.
+
+**Actual (21 October 2026):** The balanced run produced nine sections — Tech 4, Science 4, Soccer 4, Opinion 4, Español 2, World 2, Agriculture 2, Art 2, US Politics 1 — and **no México at all**, despite three working México feeds.
+
+`min_section_stories` can only spare stories that reach it, and the title screen runs first. `prefilter_by_title` interleaves sections at equal scores but has no guaranteed per-section minimum, so a section whose headlines all score below the cut line is gone before the keep-list is applied.
+
+The symmetric fix is a per-section floor in the screen as well, mirroring `min_section_stories`. Until then a section can still disappear on days when its headlines read weakly, which is most likely for the small sections (México and Agriculture have three and two feeds).
+
 ## Closed here on purpose (do not re-open from old plans)
 
 These were open in `docs/superpowers/plans/2026-05-26-open-source-security-readiness.md`. The code has moved on:

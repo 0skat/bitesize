@@ -100,7 +100,9 @@ def test_filter_is_a_noop_when_unconfigured(isolated_store, monkeypatch):
     import main
 
     articles = [_art("a", 10), _art("b", 90)]
-    assert main._apply_interest_filter(articles) == articles
+    kept, overflow = main._apply_interest_filter(articles)
+    assert kept == articles
+    assert overflow == []
 
 
 def test_filter_drops_below_threshold(isolated_store, monkeypatch):
@@ -110,7 +112,7 @@ def test_filter_drops_below_threshold(isolated_store, monkeypatch):
 
     import main
 
-    kept = main._apply_interest_filter([_art("low", 20), _art("high", 80)])
+    kept, _ = main._apply_interest_filter([_art("low", 20), _art("high", 80)])
     assert [a["title"] for a in kept] == ["high"]
 
 
@@ -121,10 +123,12 @@ def test_filter_caps_and_keeps_the_best(isolated_store, monkeypatch):
 
     import main
 
-    kept = main._apply_interest_filter(
+    kept, overflow = main._apply_interest_filter(
         [_art("mid", 50), _art("best", 95), _art("worst", 5), _art("good", 70)]
     )
     assert [a["title"] for a in kept] == ["best", "good"]
+    # Trimmed stories are handed back rather than thrown away.
+    assert [a["title"] for a in overflow] == ["mid", "worst"]
 
 
 def test_threshold_too_high_falls_back_to_a_floor(isolated_store, monkeypatch):
@@ -135,7 +139,7 @@ def test_threshold_too_high_falls_back_to_a_floor(isolated_store, monkeypatch):
     import main
 
     articles = [_art(f"s{i}", i) for i in range(10)]
-    kept = main._apply_interest_filter(articles)
+    kept, _ = main._apply_interest_filter(articles)
     assert len(kept) == main._MIN_FLOOR_ARTICLES
     # Highest scores survive.
     assert kept[0]["title"] == "s9"
@@ -149,7 +153,7 @@ def test_threshold_and_cap_compose(isolated_store, monkeypatch):
 
     import main
 
-    kept = main._apply_interest_filter(
+    kept, _ = main._apply_interest_filter(
         [_art("a", 95), _art("b", 10), _art("c", 60), _art("d", 45)]
     )
     assert [a["title"] for a in kept] == ["a", "c"]
@@ -664,3 +668,159 @@ def test_thinking_budget_is_configurable(isolated_store, monkeypatch):
 
     claude_backend.call("do a thing", "")
     assert seen["env"]["MAX_THINKING_TOKENS"] == "4000"
+
+
+# ── Section balancing + overflow ────────────────────────────────────────────
+
+
+def _cat(title, score, category):
+    return {"title": title, "relevance": score, "relevance_source": "ai",
+            "category": category}
+
+
+def test_balanced_take_gives_every_section_its_lead_first():
+    import main
+
+    # Opinion sweeps the top scores; Art and Agriculture score lower.
+    arts = (
+        [_cat(f"op{i}", 95 - i, "Opinion") for i in range(10)]
+        + [_cat("art1", 84, "Art"), _cat("art2", 83, "Art")]
+        + [_cat("ag1", 82, "Agriculture")]
+    )
+    kept, overflow = main._balanced_take(arts, 6)
+
+    sections = [a["category"] for a in kept]
+    # Every section represented, and no section monopolises the issue.
+    assert set(sections) == {"Opinion", "Art", "Agriculture"}
+    assert sections.count("Opinion") == 3
+    assert len(kept) == 6
+    assert len(overflow) == 7
+    # Overflow is the high scorers that lost their slot, best first.
+    assert overflow[0]["relevance"] >= overflow[-1]["relevance"]
+
+
+def test_balanced_take_visits_the_strongest_section_first():
+    import main
+
+    arts = [_cat("weak", 81, "Art"), _cat("strong", 99, "Opinion")]
+    kept, _ = main._balanced_take(arts, 2)
+    assert [a["title"] for a in kept] == ["strong", "weak"]
+
+
+def test_balanced_take_handles_a_single_section():
+    import main
+
+    arts = [_cat(f"t{i}", 90 - i, "Opinion") for i in range(5)]
+    kept, overflow = main._balanced_take(arts, 3)
+    assert [a["title"] for a in kept] == ["t0", "t1", "t2"]
+    assert [a["title"] for a in overflow] == ["t3", "t4"]
+
+
+def test_balanced_take_stops_when_articles_run_out():
+    import main
+
+    arts = [_cat("a", 90, "Art"), _cat("b", 85, "Opinion")]
+    kept, overflow = main._balanced_take(arts, 10)
+    assert len(kept) == 2
+    assert overflow == []
+
+
+def test_filter_balances_when_enabled(isolated_store, monkeypatch):
+    store.init_db()
+    store.set_setting("max_articles_per_issue", 4)
+    store.set_setting("balance_sections", True)
+    _reload(monkeypatch)
+
+    import main
+
+    arts = (
+        [_cat(f"op{i}", 95 - i, "Opinion") for i in range(6)]
+        + [_cat("art1", 80, "Art")]
+        + [_cat("mx1", 79, "México")]
+    )
+    kept, overflow = main._apply_interest_filter(arts)
+    cats = {a["category"] for a in kept}
+    assert cats == {"Opinion", "Art", "México"}, cats
+    assert len(kept) == 4
+    assert len(overflow) == 4
+
+
+def test_filter_without_balancing_is_pure_score_order(isolated_store, monkeypatch):
+    store.init_db()
+    store.set_setting("max_articles_per_issue", 3)
+    _reload(monkeypatch)
+
+    import main
+
+    arts = (
+        [_cat(f"op{i}", 95 - i, "Opinion") for i in range(5)]
+        + [_cat("art1", 80, "Art")]
+    )
+    kept, overflow = main._apply_interest_filter(arts)
+    assert {a["category"] for a in kept} == {"Opinion"}
+    assert any(a["category"] == "Art" for a in overflow)
+
+
+def test_overflow_section_label_exists_in_every_language():
+    from ai_locale import EPUB_LABELS
+
+    for code in ("en", "es", "pt-BR"):
+        assert EPUB_LABELS[code]["overflow_section"]
+
+
+def test_min_section_stories_rescues_sections_below_the_threshold(
+    isolated_store, monkeypatch
+):
+    """A global threshold otherwise deletes whole interest areas."""
+    store.init_db()
+    store.set_setting("min_keep_score", 80)
+    store.set_setting("min_section_stories", 2)
+    store.set_setting("balance_sections", True)
+    store.set_setting("max_articles_per_issue", 8)
+    _reload(monkeypatch)
+
+    import main
+
+    arts = (
+        [_cat(f"op{i}", 95 - i, "Opinion") for i in range(10)]
+        # No Art or Agriculture story clears 80.
+        + [_cat("art1", 62, "Art"), _cat("art2", 58, "Art"), _cat("art3", 40, "Art")]
+        + [_cat("ag1", 55, "Agriculture")]
+    )
+    kept, _ = main._apply_interest_filter(arts)
+    cats = {a["category"] for a in kept}
+    assert "Art" in cats, cats
+    assert "Agriculture" in cats, cats
+    # Only the section's best two are spared, not its whole backlog.
+    assert "art3" not in [a["title"] for a in kept]
+
+
+def test_min_section_stories_off_by_default_keeps_threshold_absolute(
+    isolated_store, monkeypatch
+):
+    store.init_db()
+    store.set_setting("min_keep_score", 80)
+    _reload(monkeypatch)
+
+    import main
+
+    arts = [_cat("op", 95, "Opinion"), _cat("art", 62, "Art")]
+    kept, _ = main._apply_interest_filter(arts)
+    assert [a["title"] for a in kept] == ["op"]
+
+
+def test_min_section_stories_alone_still_filters(isolated_store, monkeypatch):
+    """Setting only the floor must not become a no-op path."""
+    store.init_db()
+    store.set_setting("min_section_stories", 1)
+    store.set_setting("min_keep_score", 90)
+    _reload(monkeypatch)
+
+    import main
+
+    arts = [_cat("a", 95, "X"), _cat("b", 10, "X"), _cat("c", 20, "Y")]
+    kept, _ = main._apply_interest_filter(arts)
+    titles = {a["title"] for a in kept}
+    assert "a" in titles          # clears the bar
+    assert "c" in titles          # section Y's best, spared
+    assert "b" not in titles      # section X already had its one
