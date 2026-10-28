@@ -40,6 +40,12 @@ BiteSIze runs on one machine. It fetches the feeds you pick, pulls full article 
 You need [Python 3.13+](https://www.python.org/downloads/) and a terminal. macOS is assumed for iCloud Books and the daily LaunchAgent.
 
 ```bash
+./run.sh dashboard           # sets up .venv on first run → http://127.0.0.1:8765
+```
+
+`run.sh` creates the virtualenv, installs `requirements.txt`, and runs through `.venv/bin/python`. Doing it by hand works too, but **run the project's interpreter, not a bare `python`** — a bare `python dashboard.py` picks up your system install, which has none of these dependencies:
+
+```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -52,10 +58,12 @@ Open the dashboard, add feeds, pick an AI backend, and paste the write-API token
 Then build a book:
 
 ```bash
-python main.py --all                         # all enabled feeds
-python main.py --all --no-kindle --no-books  # EPUB only
-python main.py                               # interactive source pick
+./run.sh digest --all                        # all enabled feeds
+./run.sh digest --all --no-kindle --no-books # EPUB only
+./run.sh                                     # interactive source pick
 ```
+
+Or directly, with the venv active: `python main.py --all`.
 
 Output lands in `./output/`. With `ai_language=pt-BR` the file is named like `Resumo de Notícias - …`.
 

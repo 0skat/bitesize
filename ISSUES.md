@@ -87,6 +87,16 @@ The AI backend itself was fine throughout — a trivial `claude -p` probe during
 
 **Still open:** waking the machine needs `sudo pmset repeat wakeorpoweron MTWRFSU 06:45:00`, which the install script prints but cannot run for you. On a desktop that never sleeps, none of this applies.
 
+## requirements.txt did not pin the lxml.html.clean shim
+
+**Expected:** `pip install -r requirements.txt` gives a working environment.
+
+**Actual (28 October 2026):** Importing `feed.py` — so `main.py`, `dashboard.py`, and anything touching `preview.py` — died with `ImportError: lxml.html.clean module is now a separate project lxml_html_clean`. `justext`, pulled in by `trafilatura`, still does `from lxml.html.clean import Cleaner`, and lxml removed that module in 5.2. Neither package declares the replacement, and `lxml>=5.0` happily resolves to 6.x.
+
+Reproduced in a clean venv with only `lxml>=5.0` and `trafilatura>=1.6`: the import fails, and `pip install lxml_html_clean>=0.4` fixes it. **Fixed** by pinning it in `requirements.txt`.
+
+The local `.venv` was unaffected — it had the shim installed incidentally, with nothing declaring it — so the gap only showed up when the dashboard was run under a different interpreter. A fresh clone would have hit it on day one.
+
 ## Closed here on purpose (do not re-open from old plans)
 
 These were open in `docs/superpowers/plans/2026-05-26-open-source-security-readiness.md`. The code has moved on:

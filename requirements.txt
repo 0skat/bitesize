@@ -2,6 +2,10 @@ feedparser>=6.0
 questionary>=2.0
 beautifulsoup4>=4.12
 lxml>=5.0
+# justext (pulled in by trafilatura) still imports lxml.html.clean, which lxml
+# removed in 5.2 and now ships as a separate project. Without this, importing
+# feed.py fails with "lxml.html.clean module is now a separate project".
+lxml_html_clean>=0.4
 ebooklib>=0.18
 rich>=13.0
 trafilatura>=1.6

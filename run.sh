@@ -13,5 +13,21 @@ if [ ! -d "$VENV_DIR" ]; then
   echo ""
 fi
 
-# Run
-"$VENV_DIR/bin/python" "$SCRIPT_DIR/main.py"
+# Keep an existing venv's dependencies current with requirements.txt. Cheap
+# when nothing changed, and it stops a stale venv failing on a new import.
+"$VENV_DIR/bin/pip" install --quiet -r "$SCRIPT_DIR/requirements.txt"
+
+# Run. Always through the venv interpreter — a bare `python dashboard.py` picks
+# up the system install, which has no project dependencies.
+case "${1:-digest}" in
+  dashboard)
+    exec "$VENV_DIR/bin/python" "$SCRIPT_DIR/dashboard.py"
+    ;;
+  digest)
+    shift 2>/dev/null || true
+    exec "$VENV_DIR/bin/python" "$SCRIPT_DIR/main.py" "$@"
+    ;;
+  *)
+    exec "$VENV_DIR/bin/python" "$SCRIPT_DIR/main.py" "$@"
+    ;;
+esac
