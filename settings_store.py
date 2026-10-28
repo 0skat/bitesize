@@ -155,9 +155,21 @@ def _get_connection() -> sqlite3.Connection:
     return conn
 
 
+# JSON gives real booleans, but an HTML form or a curl client can hand over
+# "false" — which is a non-empty string, and so truthy. Encoding that as 1
+# silently turned settings ON that the operator was trying to turn off.
+_FALSE_STRINGS = frozenset({"", "0", "false", "no", "off", "none", "null"})
+
+
+def _coerce_bool(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() not in _FALSE_STRINGS
+    return bool(value)
+
+
 def _encode_value(value: Any, value_type: str) -> str:
     if value_type == "bool":
-        return "1" if value else "0"
+        return "1" if _coerce_bool(value) else "0"
     return str(value)
 
 

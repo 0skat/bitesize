@@ -6,14 +6,24 @@ const GROUP_LABELS = {
   integrations: "Integrations",
   cli: "CLI defaults",
   kindle: "Kindle delivery",
+  books: "iCloud Books delivery",
 };
 
+// Booleans are detected from the value's type below. This list only covers
+// keys that may arrive absent or null, where the type tells us nothing.
 const BOOL_KEYS = new Set([
   "kindle_delivery_enabled",
   "integration_gmail",
   "integration_google_calendar",
   "cli_select_all_sources",
+  "books_delivery_enabled",
+  "ai_covers_enabled",
+  "balance_sections",
 ]);
+
+function isBoolSetting(key, value) {
+  return typeof value === "boolean" || BOOL_KEYS.has(key);
+}
 
 const KINDLE_KEYS = [
   "kindle_email",
@@ -53,6 +63,13 @@ async function api(path, opts = {}) {
   const data = r.headers.get("content-type")?.includes("json")
     ? await r.json()
     : null;
+  if (r.status === 401) {
+    throw new Error(
+      dashboardToken()
+        ? "Token rejected — check it against data/dashboard.token."
+        : "This change needs the write token. Paste it in the field at the top of the page (it is in data/dashboard.token).",
+    );
+  }
   if (!r.ok) throw new Error(data?.error || data?.message || r.statusText);
   return data;
 }
@@ -73,7 +90,7 @@ function inputForKey(key, value) {
     ta.dataset.key = key;
     return ta;
   }
-  if (BOOL_KEYS.has(key)) {
+  if (isBoolSetting(key, value)) {
     const cb = document.createElement("input");
     cb.type = "checkbox";
     cb.checked = !!value;

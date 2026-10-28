@@ -1,5 +1,7 @@
 """Interests-aware scoring, the keep-list, issue pruning, and Spanish labels."""
 
+import pathlib
+
 import config
 import settings_store as store
 from ai_locale import EPUB_LABELS, ai_summary_language_rule, epub_label
@@ -948,3 +950,80 @@ def test_floor_is_inert_when_the_screen_is_off(isolated_store, monkeypatch):
     arts = [_secart(i, "Tech") for i in range(5)]
     kept, dropped = gemini.prefilter_by_title(arts, 0)
     assert kept == arts and dropped == [] and called == []
+
+
+# ── Boolean settings must survive a round trip ──────────────────────────────
+
+
+def test_bool_setting_accepts_real_booleans(isolated_store):
+    store.init_db()
+    store.set_setting("ai_covers_enabled", False)
+    assert store.load_settings().ai_covers_enabled is False
+    store.set_setting("ai_covers_enabled", True)
+    assert store.load_settings().ai_covers_enabled is True
+
+
+def test_bool_setting_does_not_flip_on_the_string_false(isolated_store):
+    """A form or curl client sends "false", which is a truthy string.
+
+    Encoding that as 1 silently switched settings on — turning AI covers back
+    on costs seven extra calls per run.
+    """
+    store.init_db()
+    for falsey in ("false", "False", "0", "no", "off", ""):
+        store.set_setting("ai_covers_enabled", falsey)
+        assert store.load_settings().ai_covers_enabled is False, falsey
+
+
+def test_bool_setting_accepts_truthy_strings(isolated_store):
+    store.init_db()
+    for truthy in ("true", "True", "1", "yes", "on"):
+        store.set_setting("balance_sections", truthy)
+        assert store.load_settings().balance_sections is True, truthy
+
+
+def test_update_settings_round_trips_every_bool(isolated_store):
+    """Saving the whole settings form must not corrupt any boolean."""
+    store.init_db()
+    bools = [k for k, (_g, t, _d) in store.SETTINGS_DEFAULTS.items() if t == "bool"]
+    assert bools, "expected boolean settings to exist"
+
+    store.update_settings({k: "false" for k in bools})
+    loaded = store.load_settings()
+    for k in bools:
+        assert getattr(loaded, k) is False, k
+
+    store.update_settings({k: "true" for k in bools})
+    loaded = store.load_settings()
+    for k in bools:
+        assert getattr(loaded, k) is True, k
+
+
+def test_every_group_has_a_dashboard_label():
+    """A group with no label renders as a bare key like "books"."""
+    import re
+
+    js = (
+        pathlib.Path(__file__).parent.parent
+        / "dashboard_static"
+        / "app.js"
+    ).read_text(encoding="utf-8")
+    block = re.search(r"const GROUP_LABELS = \{(.*?)\};", js, re.S).group(1)
+    labelled = set(re.findall(r"(\w+):", block))
+    groups = {g for g, _t, _d in store.SETTINGS_DEFAULTS.values()}
+    assert groups <= labelled, groups - labelled
+
+
+def test_every_bool_setting_is_a_checkbox_in_the_dashboard():
+    """Type detection covers these, but the fallback list must not drift."""
+    import re
+
+    js = (
+        pathlib.Path(__file__).parent.parent
+        / "dashboard_static"
+        / "app.js"
+    ).read_text(encoding="utf-8")
+    block = re.search(r"const BOOL_KEYS = new Set\(\[(.*?)\]\);", js, re.S).group(1)
+    listed = set(re.findall(r'"([^"]+)"', block))
+    bools = {k for k, (_g, t, _d) in store.SETTINGS_DEFAULTS.items() if t == "bool"}
+    assert bools <= listed, bools - listed

@@ -21,12 +21,15 @@ Seen on 29–30 August 2026 in `output/logs/digest-stdout.log`. Hypothesis: time
 **Expected:** When the direct article fetch is thin, archive.is → 1ft.io → archive.org → removepaywall.com recover the text.  
 **Actual:** Daily stats show archive.is, 1ft.io, and removepaywall at ~0%. archive.org sometimes recovers a batch (about 14/18 on 30 August). Overall full-text rate is still high because most articles succeed on the first request.
 
-## Books toggle is a text box
+## Boolean settings rendered as text boxes and flipped on save — fixed
 
-**Expected:** `books_delivery_enabled` is a checkbox, like Kindle delivery and the Gmail/Calendar flags.  
-**Actual:** The Settings tab renders it as a text field with the string `true`. The `books` group also has no friendly label (it shows as “books”).
+**Expected:** every boolean setting is a checkbox, and saving the Settings form preserves it.
 
-Hypothesis: `BOOL_KEYS` and `GROUP_LABELS` in the dashboard script were not updated when the iCloud Books settings were added. Saving the word `true` may still work; saving anything else would not.
+**Actual:** `BOOL_KEYS` in the dashboard script was a hand-maintained list that had drifted — `books_delivery_enabled` was missing, and so were `ai_covers_enabled` and `balance_sections` when they were added. Those rendered as text fields, and the saved string went through `_encode_value(value, "bool")`, which did `"1" if value else "0"`. The string `"false"` is non-empty and therefore truthy, so **saving the form turned all three ON**. For `ai_covers_enabled` that silently restored seven AI calls per run.
+
+**Fixed** on both sides: the dashboard now decides from the value's type (`typeof value === "boolean"`), so it cannot drift again, and `_encode_value` parses falsey strings (`""`, `"0"`, `"false"`, `"no"`, `"off"`, `"none"`, `"null"`). `GROUP_LABELS` gained the missing `books` label. Two tests assert no group and no boolean can drift out of the dashboard again.
+
+No settings were actually corrupted — the form had not been saved since those settings were added.
 
 ## Dashboard reads have no token
 
