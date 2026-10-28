@@ -39,7 +39,9 @@ Daily run: `scripts/install-daily-launchd.sh` → `main.py --all` at 06:50. Logs
 
 `main.py` is the only orchestrator:
 
-RSS (parallel) → full text + paywall mirrors → AI filter/summarize/score → section + global covers → EPUB → Kindle SMTP → iCloud Books.
+RSS (parallel) → dedupe → title screen → full text + paywall mirrors → AI filter/summarize/score → keep-list → section + global covers → EPUB → recorded to `issues` → Kindle SMTP → iCloud Books.
+
+Every run's picks are stored by `issues.py` (`issues` / `issue_articles` in the same SQLite file). The dashboard's Issue tab excludes stories and calls `issues.rebuild_issue`, which rewrites the EPUB from stored rows — no AI, because summaries and scores are already there. Article `content` is stored in full for that reason; stored issues prune on `output_keep_issues`.
 
 Gmail and Calendar inject extra sections when their integration flags are on. The daily LaunchAgent uses `--all`, so it honors those flags from the database and does not prompt.
 

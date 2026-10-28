@@ -37,6 +37,7 @@ from gemini import (
 from magazine_layers import article_rank_sort_key
 from epub import generate_epub
 from books import copy_to_icloud_books
+import issues
 from kindle import send_to_kindle
 from gmail import get_gmail_threads
 from gmail_processor import process_email_threads, generate_inbox_cover
@@ -487,6 +488,17 @@ def main() -> None:
 
     with console.status("[cyan]Generating EPUB…[/cyan]"):
         generate_epub(processed_sections, section_covers, global_cover, out_path)
+
+    # Record what was picked so the dashboard can review it and drop stories
+    # without another AI pass. Never let bookkeeping sink a finished digest.
+    try:
+        issue_id = issues.record_issue(
+            out_path, processed_sections, _overflow_section_name()
+        )
+        console.print(f"   [dim]issue #{issue_id} recorded for review[/dim]")
+        issues.prune_issues(settings.output_keep_issues)
+    except Exception as e:  # pragma: no cover - defensive
+        console.print(f"  [yellow]⚠  could not record issue: {e}[/yellow]")
 
     _prune_old_issues(settings.output_keep_issues)
 

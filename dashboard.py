@@ -8,6 +8,7 @@ from pathlib import Path
 
 from flask import Flask, jsonify, request, send_from_directory
 
+import issues as issue_store
 import settings_store as store
 from config import BASE_DIR, load_env, reload_settings
 from kindle import send_test_email
@@ -163,6 +164,58 @@ def delete_feed(feed_id: int):
     return jsonify({"ok": True})
 
 
+@app.get("/api/issues")
+def get_issues_api():
+    limit = request.args.get("limit", default=20, type=int)
+    limit = max(1, min(int(limit or 20), 100))
+    return jsonify({"issues": issue_store.list_issues(limit)})
+
+
+@app.get("/api/issues/<int:issue_id>")
+def get_issue_api(issue_id: int):
+    issue = issue_store.load_issue(issue_id)
+    if issue is None:
+        return jsonify({"error": f"No issue {issue_id}"}), 404
+    return jsonify(issue)
+
+
+@app.put("/api/issues/<int:issue_id>/articles")
+def put_issue_articles_api(issue_id: int):
+    """Exclude or restore several stored articles at once."""
+    data = request.get_json(silent=True) or {}
+    ids = data.get("ids")
+    if not isinstance(ids, list) or not ids:
+        return jsonify({"error": "ids must be a non-empty list"}), 400
+    try:
+        ids = [int(i) for i in ids]
+    except (TypeError, ValueError):
+        return jsonify({"error": "ids must be integers"}), 400
+    if "excluded" not in data:
+        return jsonify({"error": "excluded is required"}), 400
+
+    changed = issue_store.set_excluded_many(ids, bool(data["excluded"]))
+    issue = issue_store.load_issue(issue_id)
+    if issue is None:
+        return jsonify({"error": f"No issue {issue_id}"}), 404
+    return jsonify({"changed": changed, "issue": issue})
+
+
+@app.post("/api/issues/<int:issue_id>/rebuild")
+def post_issue_rebuild_api(issue_id: int):
+    """Rewrite the EPUB without the excluded articles. Costs no AI calls."""
+    data = request.get_json(silent=True) or {}
+    deliver = bool(data.get("deliver", True))
+    result = issue_store.rebuild_issue(issue_id, deliver=deliver)
+    return jsonify(result), (200 if result.get("ok") else 400)
+
+
+@app.delete("/api/issues/<int:issue_id>")
+def delete_issue_api(issue_id: int):
+    if not issue_store.delete_issue(issue_id):
+        return jsonify({"error": f"No issue {issue_id}"}), 404
+    return jsonify({"ok": True})
+
+
 @app.post("/api/kindle/test")
 def kindle_test():
     settings = store.load_settings()
@@ -174,6 +227,7 @@ def kindle_test():
 def main() -> None:
     store.init_db()
     store.migrate_from_files_if_empty()
+    issue_store.init_db()
     print(f"BiteSIze dashboard → http://{HOST}:{PORT}")
     app.run(host=HOST, port=PORT, debug=False)
 

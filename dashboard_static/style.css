@@ -224,7 +224,82 @@ footer {
   margin-top: 2rem;
 }
 
+/* ── Issue review ────────────────────────────────────────────────────────── */
+
+.issue-meta {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0.4rem 0 0.2rem;
+}
+
+.sec-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.sec-head h2 { margin: 0; }
+
+.sec-tag {
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+
+.art-row {
+  display: grid;
+  grid-template-columns: auto 2.6rem 1fr;
+  align-items: start;
+  gap: 0.6rem;
+  padding: 0.55rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.art-row:first-of-type { border-top: none; }
+
+.art-row.excluded { opacity: 0.45; }
+.art-row.excluded .art-title { text-decoration: line-through; }
+
+.art-row input[type="checkbox"] { margin-top: 0.25rem; }
+
+.art-score {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  font-size: 0.9rem;
+  text-align: right;
+  padding-top: 0.1rem;
+}
+
+/* A length-based stand-in rather than a real model score. */
+.art-score.fallback { color: var(--muted); font-weight: 400; }
+
+.art-title { font-size: 0.95rem; line-height: 1.35; }
+.art-title a { color: var(--text); }
+
+.art-meta {
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin-top: 0.1rem;
+}
+
+.art-summary {
+  font-size: 0.85rem;
+  line-height: 1.45;
+  margin-top: 0.25rem;
+}
+
 @media (max-width: 640px) {
   .field { grid-template-columns: 1fr; }
   .feed-row, .feed-add { grid-template-columns: 1fr; }
+  .art-row { grid-template-columns: auto 2.2rem 1fr; }
+  .sec-head { flex-wrap: wrap; }
 }

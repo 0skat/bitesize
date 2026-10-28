@@ -165,6 +165,30 @@ Two things worth knowing before trying to reason about this yourself:
 
 If usage is still too high, `ai_backend=ollama` removes it entirely. On Apple silicon with 24 GB, `qwen2.5:14b` is a better choice than the repo's default `llama3:8b` — it follows JSON instructions more reliably, which is all this pipeline asks of a model.
 
+### Reviewing what a run picked
+
+A run's article list only ever lived in memory, so once the EPUB was written there was no record of what had been chosen and no way to drop a story without regenerating the digest and paying for the AI again.
+
+Each run now records its picks to SQLite, and the dashboard's **Issue** tab edits them in place: pick a run, untick anything unwanted (or **Drop section** for a whole one), then **Rebuild EPUB**. The rebuild writes the book again without the dropped stories and re-copies it to Books.
+
+**A rebuild costs no AI calls.** Summaries, tags and scores are already stored, and covers use the non-AI fallback layout.
+
+- A section emptied by removals disappears rather than leaving a blank front page.
+- Scores from the length-based fallback render greyed out, so a real model score is distinguishable from a stand-in.
+- Stored issues prune alongside the EPUBs, on the same `output_keep_issues` count.
+- Recording is wrapped so bookkeeping can never fail a finished digest.
+- The rebuilt file can be *larger* even with fewer stories: the cover JPEG is regenerated and dominates the file, so its compression varies by more than the removed text weighs.
+
+API, all under the dashboard's usual rule that writes need the Bearer token:
+
+| Route | Does |
+| --- | --- |
+| `GET /api/issues` | Recent runs with kept/stored counts |
+| `GET /api/issues/<id>` | One issue by section (bodies omitted) |
+| `PUT /api/issues/<id>/articles` | `{ids: [...], excluded: bool}` |
+| `POST /api/issues/<id>/rebuild` | `{deliver: bool}` |
+| `DELETE /api/issues/<id>` | Forget the record; leaves the EPUB alone |
+
 ### Keeping storage flat
 
 Upstream keeps every EPUB in `output/` forever. `output_keep_issues` prunes to the newest N after each successful run (0 keeps everything, the old behaviour).
@@ -251,8 +275,8 @@ Dashboard: `python dashboard.py` → http://127.0.0.1:8765
 | --- | --- |
 | Settings | AI, language, delivery, integrations |
 | Sources | Categories and feeds |
+| Issue | What the last runs picked; drop stories and rebuild |
 | Preview | Live headlines (five at first, then show more) |
-| Jev | Classify runs and label export |
 | Kindle | Delivery status |
 
 ## Troubleshooting

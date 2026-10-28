@@ -19,6 +19,7 @@
   <nav class="tabs">
     <button class="tab active" data-tab="settings">Settings</button>
     <button class="tab" data-tab="sources">Sources</button>
+    <button class="tab" data-tab="issue">Issue</button>
     <button class="tab" data-tab="preview">Preview</button>
     <button class="tab" data-tab="kindle">Kindle</button>
   </nav>
@@ -37,6 +38,18 @@
       </div>
       <div id="sources-list"></div>
       <p id="sources-status" class="status"></p>
+    </section>
+
+    <section id="panel-issue" class="panel">
+      <p class="preview-intro">What the last runs actually picked. Untick anything you do not want, then rebuild — the summaries are already written, so a rebuild costs no AI calls.</p>
+      <div class="toolbar">
+        <select id="issue-picker"></select>
+        <button id="reload-issue">Reload</button>
+        <button id="rebuild-issue" class="primary">Rebuild EPUB</button>
+      </div>
+      <p id="issue-meta" class="issue-meta"></p>
+      <p id="issue-status" class="status"></p>
+      <div id="issue-list"></div>
     </section>
 
     <section id="panel-preview" class="panel">

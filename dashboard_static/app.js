@@ -268,6 +268,161 @@ async function refreshSources() {
 }
 
 let previewLoaded = false;
+let issuesLoaded = false;
+let currentIssue = null;
+
+// ── Issue review ────────────────────────────────────────────────────────────
+
+function issueLabel(it) {
+  const when = (it.created_at || "").replace("T", " ");
+  const gone = it.epub_exists ? "" : " — file pruned";
+  return `#${it.id}  ${when}  (${it.kept}/${it.stored} kept)${gone}`;
+}
+
+async function loadIssueList(selectId) {
+  const picker = $("#issue-picker");
+  const data = await api("/api/issues?limit=30");
+  const list = data.issues || [];
+  picker.innerHTML = "";
+  if (!list.length) {
+    const o = document.createElement("option");
+    o.textContent = "No issues recorded yet — run the digest first";
+    o.value = "";
+    picker.appendChild(o);
+    $("#issue-list").innerHTML = "";
+    $("#issue-meta").textContent = "";
+    return;
+  }
+  for (const it of list) {
+    const o = document.createElement("option");
+    o.value = it.id;
+    o.textContent = issueLabel(it);
+    picker.appendChild(o);
+  }
+  picker.value = String(selectId ?? list[0].id);
+  await loadIssue(picker.value);
+}
+
+function articleRow(art) {
+  const row = document.createElement("div");
+  row.className = "art-row" + (art.excluded ? " excluded" : "");
+
+  const cb = document.createElement("input");
+  cb.type = "checkbox";
+  cb.checked = !art.excluded;
+  cb.dataset.articleId = art.id;
+  cb.title = "Untick to drop this story from the rebuilt EPUB";
+  cb.onchange = () => toggleArticles([art.id], !cb.checked);
+
+  const score = document.createElement("span");
+  score.className = "art-score";
+  score.textContent = (art.relevance / 10).toFixed(1);
+  if (art.relevance_source && art.relevance_source !== "ai") {
+    score.classList.add("fallback");
+    score.title = `score source: ${art.relevance_source}`;
+  }
+
+  const main = document.createElement("div");
+  main.className = "art-main";
+  const h = document.createElement("div");
+  h.className = "art-title";
+  if (art.url) {
+    const a = document.createElement("a");
+    a.href = art.url;
+    a.target = "_blank";
+    a.rel = "noreferrer noopener";
+    a.textContent = art.title || "(untitled)";
+    h.appendChild(a);
+  } else {
+    h.textContent = art.title || "(untitled)";
+  }
+  const meta = document.createElement("div");
+  meta.className = "art-meta";
+  const bits = [art.source, art.published, art.tipo, (art.temas || []).join(", ")];
+  meta.textContent = bits.filter(Boolean).join(" · ");
+  const sum = document.createElement("div");
+  sum.className = "art-summary";
+  sum.textContent = art.summary || "(no summary)";
+  main.append(h, meta, sum);
+
+  row.append(cb, score, main);
+  return row;
+}
+
+function renderIssue(issue) {
+  currentIssue = issue;
+  const root = $("#issue-list");
+  root.innerHTML = "";
+
+  let kept = 0;
+  let total = 0;
+  for (const sec of issue.sections) {
+    const card = document.createElement("div");
+    card.className = "group";
+    const head = document.createElement("div");
+    head.className = "sec-head";
+
+    const title = document.createElement("h2");
+    const live = sec.articles.filter((a) => !a.excluded).length;
+    title.textContent = `${sec.name} (${live}/${sec.articles.length})`;
+    if (sec.kind === "overflow") {
+      const tag = document.createElement("span");
+      tag.className = "sec-tag";
+      tag.textContent = "overflow";
+      title.appendChild(tag);
+    }
+
+    const drop = document.createElement("button");
+    drop.textContent = live ? "Drop section" : "Restore section";
+    drop.onclick = () =>
+      toggleArticles(sec.articles.map((a) => a.id), live > 0);
+
+    head.append(title, drop);
+    card.appendChild(head);
+    for (const art of sec.articles) card.appendChild(articleRow(art));
+    root.appendChild(card);
+
+    kept += live;
+    total += sec.articles.length;
+  }
+
+  $("#issue-meta").textContent =
+    `${issue.epub_name} — ${kept} of ${total} kept` +
+    (issue.epub_exists ? "" : " (EPUB no longer on disk; rebuild recreates it)");
+}
+
+async function loadIssue(id) {
+  if (!id) return;
+  const status = $("#issue-status");
+  try {
+    setStatus(status, "Loading…", true);
+    renderIssue(await api(`/api/issues/${id}`));
+    setStatus(status, "", true);
+  } catch (e) {
+    setStatus(status, e.message, false);
+  }
+}
+
+async function toggleArticles(ids, excluded) {
+  if (!currentIssue) return;
+  const status = $("#issue-status");
+  try {
+    const res = await api(`/api/issues/${currentIssue.id}/articles`, {
+      method: "PUT",
+      body: JSON.stringify({ ids, excluded }),
+    });
+    renderIssue(res.issue);
+    setStatus(
+      status,
+      `${excluded ? "Dropped" : "Restored"} ${res.changed} — rebuild to apply.`,
+      true,
+    );
+  } catch (e) {
+    setStatus(status, e.message, false);
+  }
+}
+
+
 
 $$(".tab").forEach((btn) => {
   btn.addEventListener("click", () => {
@@ -278,6 +433,10 @@ $$(".tab").forEach((btn) => {
     if (btn.dataset.tab === "preview" && !previewLoaded) {
       previewLoaded = true;
       loadPreview();
+    }
+    if (btn.dataset.tab === "issue" && !issuesLoaded) {
+      issuesLoaded = true;
+      loadIssueList().catch((e) => setStatus($("#issue-status"), e.message, false));
     }
   });
 });
@@ -422,3 +581,35 @@ if (tokenInput) {
     else localStorage.removeItem(TOKEN_KEY);
   });
 }
+
+$("#issue-picker").onchange = (e) => loadIssue(e.target.value);
+
+$("#reload-issue").onclick = () =>
+  loadIssueList($("#issue-picker").value).catch((e) =>
+    setStatus($("#issue-status"), e.message, false),
+  );
+
+$("#rebuild-issue").onclick = async () => {
+  if (!currentIssue) return;
+  const status = $("#issue-status");
+  const btn = $("#rebuild-issue");
+  btn.disabled = true;
+  try {
+    setStatus(status, "Rebuilding EPUB…", true);
+    const res = await api(`/api/issues/${currentIssue.id}/rebuild`, {
+      method: "POST",
+      body: JSON.stringify({ deliver: true }),
+    });
+    setStatus(
+      status,
+      `Rebuilt ${res.epub_name} — ${res.articles} articles in ${res.sections} sections` +
+        (res.delivered ? ", copied to Books." : ", not copied to Books."),
+      true,
+    );
+    await loadIssueList(currentIssue.id);
+  } catch (e) {
+    setStatus(status, e.message, false);
+  } finally {
+    btn.disabled = false;
+  }
+};
