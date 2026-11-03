@@ -224,3 +224,85 @@ def test_the_session_cookie_is_http_only(client):
     cookie = res.headers.get("Set-Cookie", "")
     assert "HttpOnly" in cookie
     assert "SameSite=Lax" in cookie
+
+
+# ── Where the dashboard is allowed to listen ────────────────────────────────
+
+
+def test_default_bind_is_loopback(client, monkeypatch):
+    import dashboard
+
+    host, notes = dashboard.resolve_bind()
+    assert host == "127.0.0.1"
+    assert notes == []
+
+
+def test_a_tailnet_bind_is_refused_without_a_password(client, monkeypatch):
+    """The bind was the only thing keeping reads private — refuse, don't warn."""
+    import dashboard
+    import settings_store as store
+
+    store.set_setting("dashboard_host", "tailscale")
+    monkeypatch.setattr(dashboard.netbind, "tailscale_address", lambda: "100.64.1.2")
+
+    host, notes = dashboard.resolve_bind()
+    assert host == "127.0.0.1", "must not expose reads without a password"
+    assert any("REFUSING" in n for n in notes)
+
+
+def test_a_tailnet_bind_is_allowed_once_a_password_is_set(client, monkeypatch):
+    import dashboard
+    import settings_store as store
+
+    store.set_setting("dashboard_host", "tailscale")
+    monkeypatch.setattr(dashboard.netbind, "tailscale_address", lambda: "100.64.1.2")
+    auth.set_password("correct horse battery")
+
+    host, notes = dashboard.resolve_bind()
+    assert host == "100.64.1.2"
+    assert not any("REFUSING" in n for n in notes)
+
+
+def test_bind_falls_back_when_tailscale_is_not_connected(client, monkeypatch):
+    import dashboard
+    import settings_store as store
+
+    store.set_setting("dashboard_host", "tailscale")
+    monkeypatch.setattr(dashboard.netbind, "tailscale_address", lambda: None)
+    auth.set_password("correct horse battery")
+
+    host, notes = dashboard.resolve_bind()
+    assert host == "127.0.0.1"
+    assert any("no tailnet address" in n for n in notes)
+
+
+def test_binding_every_interface_is_called_out(client, monkeypatch):
+    import dashboard
+    import settings_store as store
+
+    store.set_setting("dashboard_host", "0.0.0.0")
+    auth.set_password("correct horse battery")
+
+    host, notes = dashboard.resolve_bind()
+    assert host == "0.0.0.0"
+    assert any("every interface" in n for n in notes)
+
+
+def test_a_nonsense_host_falls_back_rather_than_crashing(client, monkeypatch):
+    import dashboard
+    import settings_store as store
+
+    store.set_setting("dashboard_host", "not-a-real-host")
+    auth.set_password("correct horse battery")
+
+    host, notes = dashboard.resolve_bind()
+    assert host == "127.0.0.1"
+    assert notes
+
+
+def test_tailnet_detection_recognises_the_cgnat_range():
+    import netbind
+
+    assert netbind.is_loopback("127.0.0.1") is True
+    assert netbind.is_loopback("localhost") is True
+    assert netbind.is_loopback("100.108.223.67") is False

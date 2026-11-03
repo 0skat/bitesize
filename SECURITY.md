@@ -24,7 +24,8 @@ Passwords are stored as an scrypt hash (n=2^15, r=8, 16-byte random salt per pas
 
 ### What is still not covered
 
-- There is **no TLS in the application**. Over a tunnel, the tunnel provides it. Do not put this on a LAN or the internet in plaintext.
+- There is **no TLS in the application**. Over a tunnel, the tunnel provides it; over a `dashboard_host=tailscale` bind, WireGuard does. Do not put this on a LAN or the internet in plaintext.
+- `dashboard_host` refuses any non-loopback bind while no password is set, and falls back to `127.0.0.1` with a message. That interlock is the only thing standing between a mistyped setting and open reads, so do not remove it.
 - There is **one** account and no roles. Anyone with the password or the token has full control, including triggering AI spend.
 - The bearer token never expires and is not rotated; delete `data/dashboard.token` to roll it.
 

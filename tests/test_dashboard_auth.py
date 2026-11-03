@@ -8,15 +8,21 @@ import pytest
 
 
 @pytest.fixture
-def client(isolated_store):
-    """A client bound to a throwaway database.
+def client(isolated_store, tmp_path, monkeypatch):
+    """A client bound to a throwaway database and throwaway credentials.
 
-    These tests create and delete categories, and must never be able to leave
-    residue in the operator's real config if one of them fails midway.
+    These tests create and delete categories, so they must not be able to
+    leave residue in the operator's real config. They also assert the
+    no-password model, which means they must not see a real dashboard
+    password either — otherwise setting one breaks the suite.
     """
+    import auth
     import dashboard
     import settings_store as store
 
+    monkeypatch.setattr(auth, "AUTH_FILE", tmp_path / "dashboard_auth.json")
+    monkeypatch.setattr(auth, "SECRET_FILE", tmp_path / "dashboard_secret")
+    dashboard._LOGIN_ATTEMPTS.clear()
     store.init_db()
     dashboard.app.config.update(TESTING=True)
     return dashboard.app.test_client()

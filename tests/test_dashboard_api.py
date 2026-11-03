@@ -1,5 +1,6 @@
 import pytest
 
+import auth
 import dashboard
 import settings_store as store
 
@@ -13,6 +14,10 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "ENV_FILE", tmp_path / ".env")
     monkeypatch.setattr(dashboard, "TOKEN_FILE", token_file)
     monkeypatch.setattr(dashboard, "DASHBOARD_TOKEN", "test-token")
+    # These tests assert the open-read model, so they must not see a real
+    # dashboard password — otherwise setting one on the machine breaks them.
+    monkeypatch.setattr(auth, "AUTH_FILE", tmp_path / "dashboard_auth.json")
+    monkeypatch.setattr(auth, "SECRET_FILE", tmp_path / "dashboard_secret")
     store.init_db()
     dashboard.app.config["TESTING"] = True
     return dashboard.app.test_client()

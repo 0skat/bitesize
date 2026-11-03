@@ -97,6 +97,10 @@ SETTINGS_DEFAULTS: dict[str, tuple[str, str, Any]] = {
     # dashboard is only ever reached through HTTPS (tailscale serve); it would
     # stop logins working over plain http://127.0.0.1.
     "dashboard_cookie_secure": ("dashboard", "bool", False),
+    # Interface the dashboard listens on. "127.0.0.1" keeps it local-only.
+    # "tailscale" binds to this machine's tailnet address, reachable only by
+    # your own devices. Any non-loopback bind requires a password to be set.
+    "dashboard_host": ("dashboard", "str", "127.0.0.1"),
 }
 
 
@@ -150,6 +154,7 @@ class Settings:
     calendar_lookback_days: int = 3
     cli_select_all_sources: bool = False
     dashboard_cookie_secure: bool = False
+    dashboard_host: str = "127.0.0.1"
 
 
 def _get_connection() -> sqlite3.Connection:

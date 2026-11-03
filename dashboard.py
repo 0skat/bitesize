@@ -13,6 +13,7 @@ from flask import Flask, jsonify, request, send_from_directory, session
 
 import auth
 import issues as issue_store
+import netbind
 import pool as pool_store
 import settings_store as store
 from config import BASE_DIR, load_env, reload_settings
@@ -22,7 +23,7 @@ from preview import build_source_preview
 load_env()
 
 STATIC_DIR = Path(__file__).parent / "dashboard_static"
-HOST = "127.0.0.1"
+DEFAULT_HOST = "127.0.0.1"
 PORT = 8765
 TOKEN_FILE = BASE_DIR / "data" / "dashboard.token"
 
@@ -418,13 +419,50 @@ def kindle_test():
     return jsonify({"ok": ok, "message": message}), status
 
 
+def resolve_bind() -> tuple[str, list[str]]:
+    """Where to listen, plus anything the operator should be told.
+
+    Binding past loopback is the point at which the password stops being
+    optional: the bind itself was the only thing keeping reads private. Rather
+    than warn and carry on, refuse and stay on loopback.
+    """
+    notes: list[str] = []
+    configured = store.load_settings().dashboard_host
+    host, problem = netbind.resolve_host(configured)
+    if problem:
+        notes.append(problem)
+
+    if not netbind.is_loopback(host) and not auth.password_is_set():
+        notes.append(
+            f"REFUSING to bind {host}: no dashboard password is set, so every "
+            "read would be open to that network. Run ./run.sh set-password "
+            "first. Staying on 127.0.0.1."
+        )
+        return DEFAULT_HOST, notes
+
+    if host == "0.0.0.0":
+        notes.append(
+            "Listening on every interface, not just your tailnet. There is no "
+            "TLS in this app — prefer dashboard_host=tailscale."
+        )
+    return host, notes
+
+
 def main() -> None:
     store.init_db()
     store.migrate_from_files_if_empty()
     issue_store.init_db()
     pool_store.init_db()
-    print(f"BiteSIze dashboard → http://{HOST}:{PORT}")
-    app.run(host=HOST, port=PORT, debug=False)
+
+    host, notes = resolve_bind()
+    for note in notes:
+        print(f"  ! {note}")
+
+    scheme_note = "" if auth.password_is_set() else "  (no password — reads are open)"
+    print(f"BiteSIze dashboard → http://{host}:{PORT}{scheme_note}")
+    if not netbind.is_loopback(host):
+        print("  Reachable from your other tailnet devices at this address.")
+    app.run(host=host, port=PORT, debug=False)
 
 
 if __name__ == "__main__":

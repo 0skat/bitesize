@@ -219,6 +219,16 @@ Tailscale terminates TLS and forwards to `127.0.0.1:8765`, so the app keeps its 
 
 Plain `ssh -L 8765:localhost:8765 you@mac` works too, and needs no new software, but the tunnel has to be re-established and iOS SSH clients make that tedious.
 
+**If `tailscale serve` is unavailable**, `dashboard_host` can bind the dashboard straight to the tailnet address instead:
+
+| Value | Listens on |
+| --- | --- |
+| `127.0.0.1` (default) | loopback only |
+| `tailscale` | this machine's `100.x` tailnet address, auto-detected |
+| an IP, or `0.0.0.0` | exactly that |
+
+Tailscale encrypts node-to-node traffic with WireGuard, so a tailnet bind is private without TLS. Two things to know before using it: **a non-loopback bind is refused outright unless a password is set** — the bind was the only thing keeping reads private, so the dashboard stays on loopback and says so rather than exposing them — and **you cannot reach your own tailnet address from the same Mac**, because Tailscale's network extension does not hairpin traffic back to itself. Binding to `tailscale` therefore makes the dashboard reachable from your other devices but *not* from the Mac running it. `tailscale serve` avoids that trade-off, which is why it is the first recommendation.
+
 > [!WARNING]
 > Do not reach for `HOST = "0.0.0.0"`. There is no TLS in the application, one account, and no rate limiting beyond the login throttle. The tunnel is what makes this safe.
 
