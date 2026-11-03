@@ -147,6 +147,18 @@ Cross-feed duplicates are removed in the same place, before the body fetch. Over
 
 `source` is what a bilingual reader wants from a mixed feed list: English sources stay English, Spanish sources stay Spanish, and only the furniture around them is localised.
 
+Getting that reliable took three attempts, measured on real issues rather than guessed:
+
+| Prompt | Summaries in the wrong language |
+| --- | --- |
+| One global "match the article's own language" rule | 6 of 44 (13.6%) |
+| Each article tagged `(language: xx)` | 2 of 38 (5.3%) |
+| Tags + monolingual batches + tag declared authoritative | 0 of 42 |
+
+A single instruction cannot hold a 25-article batch drawn from mixed-language feeds together: the model lets one article's language set its neighbours'. Tagging each article from a stopword detector cut most of it. What remained were **Spanish articles about anglophone subjects** — English media criticising a Liverpool player, Latino voters in Texas — where the subject matter dragged the summary into English despite a correct tag. So the rule now states that what a story is *about* never changes the language it is written *in*, and batches are grouped by detected language so there is no mixed context left to drift across. Grouping rounds up per language, which in practice cost no extra calls.
+
+`detect_language` returns `""` rather than guessing when the signal is weak, and untagged articles fall back to matching their own body. Spanish and Portuguese share most of their function words, so naming either needs a two-word lead; English separates on one.
+
 ### Claude as the AI backend
 
 `ai_backend=claude` drives the [Claude Code](https://claude.com/claude-code) CLI. With no `ANTHROPIC_API_KEY` set it uses your existing Claude subscription rather than per-token API billing; setting that variable switches it to the metered API. The backend strips the CLI's coding-agent system prompt and tool catalogue (`--restricted`, `--strict-mcp-config`, `--exclude-dynamic-system-prompt-sections`), which cuts per-call overhead from roughly 19k tokens to 6k. `claude_model` defaults to Haiku, which is enough for batch JSON.

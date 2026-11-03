@@ -100,6 +100,16 @@ Reproduced in a clean venv with only `lxml>=5.0` and `trafilatura>=1.6`: the imp
 
 The local `.venv` was unaffected — it had the shim installed incidentally, with nothing declaring it — so the gap only showed up when the dashboard was run under a different interpreter. A fresh clone would have hit it on day one.
 
+## Reuters cannot be fetched at all
+
+**Expected:** Reuters can be added as a source like any other outlet.
+
+**Actual (2 November 2026):** Every route fails. All Reuters RSS endpoints return zero entries — the legacy `feeds.reuters.com/reuters/topNews`, the Arc patterns under `reuters.com/arc/outboundfeeds/rss/`, and `reutersagency.com/feed/`. `reuters.com` itself answers **HTTP 401** to the project fetcher, so even a known article URL yields nothing. Google News and Bing proxies do return Reuters headlines, but only as opaque redirects (`news.google.com/rss/articles/CBMi…`, `bing.com/news/apiclick.aspx`) whose pages extract to **0 characters** — they are JavaScript interstitials.
+
+Adding any of them would cost a fetch per story every morning and contribute nothing, since `filter_headline_only` drops bodyless articles by design.
+
+Verified working wire-service substitutes, each returning real article text: Guardian World (6,130 chars), Deutsche Welle (2,817), France 24 (2,061), CNBC World (1,701). Sky News returns entries but extracts to 0. Guardian World and Deutsche Welle are in the World section.
+
 ## Closed here on purpose (do not re-open from old plans)
 
 These were open in `docs/superpowers/plans/2026-05-26-open-source-security-readiness.md`. The code has moved on:

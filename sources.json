@@ -18,8 +18,54 @@
     "World": {
       "Al Jazeera": "https://www.aljazeera.com/xml/rss/all.xml",
       "BBC World": "http://feeds.bbci.co.uk/news/world/rss.xml",
+      "Deutsche Welle": "https://rss.dw.com/rdf/rss-en-all",
+      "Guardian World": "https://www.theguardian.com/world/rss",
       "NPR News": "https://feeds.npr.org/1001/rss.xml",
       "Vox": "https://www.vox.com/rss/index.xml"
+    },
+    "Science": {
+      "Nature": "https://www.nature.com/nature.rss",
+      "Phys.org Biology": "https://phys.org/rss-feed/biology-news/",
+      "Phys.org Chemistry": "https://phys.org/rss-feed/chemistry-news/",
+      "Quanta": "https://www.quantamagazine.org/feed/",
+      "Science Daily": "https://www.sciencedaily.com/rss/all.xml"
+    },
+    "Agriculture": {
+      "Farm Progress": "https://www.farmprogress.com/rss.xml",
+      "Modern Farmer": "https://modernfarmer.com/feed/"
+    },
+    "Soccer": {
+      "BBC Football": "https://feeds.bbci.co.uk/sport/football/rss.xml",
+      "BBC Liverpool": "https://feeds.bbci.co.uk/sport/football/teams/liverpool/rss.xml",
+      "Guardian Football": "https://www.theguardian.com/football/rss",
+      "Sky Sports Football": "https://www.skysports.com/rss/11661",
+      "This Is Anfield": "https://www.thisisanfield.com/feed/"
+    },
+    "Art": {
+      "Art Newspaper": "https://www.theartnewspaper.com/rss.xml",
+      "Artnet News": "https://news.artnet.com/feed",
+      "Colossal": "https://www.thisiscolossal.com/feed/",
+      "Hyperallergic": "https://hyperallergic.com/feed/"
+    },
+    "US Politics": {
+      "NPR Politics": "https://feeds.npr.org/1014/rss.xml",
+      "Politico": "https://rss.politico.com/politics-news.xml",
+      "The Hill": "https://thehill.com/news/feed/"
+    },
+    "México": {
+      "El Financiero": "https://www.elfinanciero.com.mx/rss/",
+      "Expansión": "https://expansion.mx/rss",
+      "La Jornada": "https://www.jornada.com.mx/rss/edicion.xml"
+    },
+    "Opinion": {
+      "Astral Codex Ten": "https://www.astralcodexten.com/feed",
+      "Big Think": "https://bigthink.com/feed/",
+      "Import AI": "https://importai.substack.com/feed",
+      "Marginal Revolution": "https://marginalrevolution.com/feed",
+      "Noahpinion": "https://www.noahpinion.blog/feed",
+      "One Useful Thing": "https://www.oneusefulthing.org/feed",
+      "Platformer": "https://www.platformer.news/feed",
+      "Slow Boring": "https://www.slowboring.com/feed"
     }
   },
   "integrations": {

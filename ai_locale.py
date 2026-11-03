@@ -295,10 +295,13 @@ def ai_summary_language_rule() -> str:
         # caller now tags each article, and this rule leans on those tags.
         return (
             " Language: most articles are tagged '(language: xx)'. Write that "
-            "article's summary in exactly that language. Never translate, and "
-            "never let one article's language affect another's. For an "
-            "untagged article, match its own title and body. Keep JSON keys "
-            "in English."
+            "article's summary in exactly that language. The tag is "
+            "authoritative — a Spanish article about Britain is still "
+            "summarised in Spanish, and an English article about Mexico in "
+            "English. What the story is ABOUT never changes the language it "
+            "is written IN. Never translate, and never let one article's "
+            "language affect another's. For an untagged article, match its "
+            "own title and body. Keep JSON keys in English."
         )
     name = LANGUAGE_LABELS.get(code, code)
     return (

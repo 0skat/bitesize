@@ -1129,3 +1129,67 @@ def test_detect_language_separates_english_on_a_bare_lead():
     from ai_locale import detect_language
 
     assert detect_language("Scientists say the particle may explain it all now") == "en"
+
+
+def test_source_mode_batches_monolingually(isolated_store, monkeypatch):
+    """Mixed-language batches were the context the model drifted across."""
+    store.init_db()
+    store.set_setting("summary_language", "source")
+    _reload(monkeypatch)
+
+    import gemini
+
+    blocks = []
+    monkeypatch.setattr(gemini, "_ai_available", lambda: True)
+    monkeypatch.setattr(
+        gemini, "_call_ai",
+        lambda instruction, block, label="": blocks.append(block) or None)
+
+    en = {"title": "Scientists say the particle may explain it all",
+          "content": "The researchers said that the particle has been forgotten for decades and this is why it matters now.",
+          "url": "u", "source": "s", "category": "Science"}
+    es = {"title": "El aumento de la temperatura del mar cambia la fauna",
+          "content": "Los investigadores han dicho que el aumento de la temperatura del mar en las costas es por el clima.",
+          "url": "u", "source": "s", "category": "Español"}
+
+    # Interleaved input, batch size 2: without grouping each batch is mixed.
+    gemini.process_articles([dict(en), dict(es), dict(en), dict(es)], batch_size=2)
+
+    assert len(blocks) == 2
+    for block in blocks:
+        langs = {"en" if "(language: en)" in line else "es"
+                 for line in block.splitlines() if line.startswith("[")}
+        assert len(langs) == 1, f"batch mixed languages: {block[:160]}"
+
+
+def test_pinned_language_leaves_batch_order_alone(isolated_store, monkeypatch):
+    store.init_db()
+    store.set_setting("summary_language", "es")
+    _reload(monkeypatch)
+
+    import gemini
+
+    blocks = []
+    monkeypatch.setattr(gemini, "_ai_available", lambda: True)
+    monkeypatch.setattr(
+        gemini, "_call_ai",
+        lambda instruction, block, label="": blocks.append(block) or None)
+
+    arts = [
+        {"title": f"Story {i}", "content": "x " * 60, "url": "u",
+         "source": "s", "category": "Tech"}
+        for i in range(4)
+    ]
+    gemini.process_articles(arts, batch_size=2)
+    # Original order preserved: Story 0 leads the first batch.
+    assert '[0] "Story 0"' in blocks[0]
+
+
+def test_rule_says_the_tag_beats_the_subject(isolated_store, monkeypatch):
+    store.init_db()
+    store.set_setting("summary_language", "source")
+    _reload(monkeypatch)
+
+    rule = ai_summary_language_rule()
+    assert "authoritative" in rule
+    assert "ABOUT" in rule and "IN" in rule

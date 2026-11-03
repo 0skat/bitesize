@@ -405,6 +405,20 @@ def process_articles(articles: list[dict], batch_size: int | None = None) -> lis
     """
     if batch_size is None:
         batch_size = get_settings().gemini_batch_size
+
+    # Tagging each article's language cut cross-language bleed but did not end
+    # it: a Spanish article about an English subject still came back in
+    # English. Grouping the batches by language removes the mixed context the
+    # model was drifting across. Batches round up per group, so this costs at
+    # most one extra call per language present. Order does not matter — the
+    # caller regroups by section and sorts by score.
+    if summary_language_code() == "source" and len(articles) > 1:
+        articles = sorted(
+            articles,
+            key=lambda a: detect_language(
+                a.get("title", ""), (a.get("content") or "")[:600]
+            ) or "zz",
+        )
     if not _ai_available():
         console.print("  [yellow]⚠  AI backend not available — skipping AI processing[/yellow]")
         out = []
