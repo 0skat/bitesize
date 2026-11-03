@@ -7,6 +7,7 @@ const GROUP_LABELS = {
   cli: "CLI defaults",
   kindle: "Kindle delivery",
   books: "iCloud Books delivery",
+  dashboard: "Dashboard access",
 };
 
 // Booleans are detected from the value's type below. This list only covers
@@ -19,6 +20,7 @@ const BOOL_KEYS = new Set([
   "books_delivery_enabled",
   "ai_covers_enabled",
   "balance_sections",
+  "dashboard_cookie_secure",
 ]);
 
 function isBoolSetting(key, value) {
@@ -588,9 +590,8 @@ function renderPreview(data) {
 
 $("#refresh-preview").onclick = loadPreview;
 
-loadSettings().then(refreshSources).catch((e) => {
-  setStatus($("#settings-status"), e.message, false);
-});
+// Initial load is startDashboard()'s job at the bottom of this file: behind a
+// login gate these calls would 401 and splash errors across a hidden page.
 
 // A stale token in localStorage, or one a password manager autofilled over,
 // used to fail only at the moment of a write — and a DELETE that 401s looks
@@ -632,7 +633,7 @@ if (tokenInput) {
     const v = tokenInput.value.trim();
     if (v) localStorage.setItem(TOKEN_KEY, v);
   });
-  verifyToken();
+  // Only meaningful in the no-password model; startDashboard calls it then.
 }
 
 $("#issue-picker").onchange = (e) => loadIssue(e.target.value);
@@ -975,3 +976,70 @@ $("#pool-build").onclick = async () => {
 };
 
 wireSwipe();
+
+// ── Login gate ──────────────────────────────────────────────────────────────
+// With a password set, every API route needs credentials — reads included —
+// because a tunnel makes a remote request look like a local one.
+
+async function authState() {
+  try {
+    const r = await fetch("/api/auth/state");
+    return r.ok ? await r.json() : { password_set: false, authenticated: true };
+  } catch {
+    return { password_set: false, authenticated: true };
+  }
+}
+
+function showGate(show) {
+  const gate = $("#login-gate");
+  const shell = $("#app-shell");
+  if (gate) gate.hidden = !show;
+  if (shell) shell.hidden = show;
+}
+
+async function startDashboard() {
+  const state = await authState();
+
+  // The token field only matters in the no-password model.
+  const tokenField = $("#dashboard-token")?.closest(".token-field");
+  if (tokenField) tokenField.hidden = state.password_set;
+  const logout = $("#logout");
+  if (logout) logout.hidden = !state.password_set;
+
+  if (state.password_set && !state.authenticated) {
+    showGate(true);
+    return;
+  }
+  showGate(false);
+  await loadSettings();
+  await refreshSources();
+  if (!state.password_set) verifyToken();
+}
+
+$("#login-form")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const status = $("#login-status");
+  const pw = $("#login-password");
+  try {
+    setStatus(status, "Checking…", true);
+    const r = await fetch("/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: pw.value }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || "Login failed.");
+    pw.value = "";
+    setStatus(status, "", true);
+    await startDashboard();
+  } catch (err) {
+    setStatus(status, err.message, false);
+  }
+});
+
+$("#logout")?.addEventListener("click", async () => {
+  await fetch("/api/logout", { method: "POST" }).catch(() => {});
+  location.reload();
+});
+
+startDashboard();

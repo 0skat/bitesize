@@ -59,8 +59,9 @@ Relevance has two modes, and this matters before touching scoring. With `user_in
 
 ## Conventions
 
-- **Single-user local tool.** Dashboard binds `127.0.0.1`. Do not expose it.
-- **Secrets stay off git:** `.env`, `data/`, `token.json`, `credentials.json`, `output/`.
+- **Single-user local tool.** Dashboard binds `127.0.0.1`. Do not expose the port; put a tunnel in front of it instead.
+- **Two auth models, in `auth.py` and `dashboard.check_auth`.** No password: loopback is the boundary, reads open, writes need the bearer token. Password set: every `/api/` route needs a session cookie or the token, reads included, because `tailscale serve` proxies to loopback and makes remote requests look local. Static files stay open so the login page loads. Never widen `_OPEN_PATHS` without reading SECURITY.md.
+- **Secrets stay off git:** `.env`, `data/` (holds the settings DB, the bearer token, the password hash and the cookie key), `token.json`, `credentials.json`, `output/`.
 - **Tests first** for behavior changes. `pytest tests/ -v` is the gate.
 - **Delivery is best-effort.** Kindle/Books failures must not abort EPUB write.
 - **Stock Kindle has no JavaScript.** Internal links, covers, and reflowable HTML only. See `docs/research/2026-08-14-kindle-interactive-epub.md` before promising interactivity.

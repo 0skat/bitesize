@@ -93,6 +93,10 @@ SETTINGS_DEFAULTS: dict[str, tuple[str, str, Any]] = {
     "calendar_lookahead_days": ("integrations", "int", 7),
     "calendar_lookback_days": ("integrations", "int", 3),
     "cli_select_all_sources": ("cli", "bool", False),
+    # Refuse to send the session cookie over plain HTTP. Correct when the
+    # dashboard is only ever reached through HTTPS (tailscale serve); it would
+    # stop logins working over plain http://127.0.0.1.
+    "dashboard_cookie_secure": ("dashboard", "bool", False),
 }
 
 
@@ -145,6 +149,7 @@ class Settings:
     calendar_lookahead_days: int = 7
     calendar_lookback_days: int = 3
     cli_select_all_sources: bool = False
+    dashboard_cookie_secure: bool = False
 
 
 def _get_connection() -> sqlite3.Connection:

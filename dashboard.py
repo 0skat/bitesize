@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import hmac
 import os
 import secrets
+import time
+from datetime import timedelta
 from pathlib import Path
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, session
 
+import auth
 import issues as issue_store
 import pool as pool_store
 import settings_store as store
@@ -39,28 +43,77 @@ def _resolve_dashboard_token() -> str:
 DASHBOARD_TOKEN = _resolve_dashboard_token()
 
 app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="")
+app.secret_key = auth.session_secret()
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    PERMANENT_SESSION_LIFETIME=timedelta(days=30),
+    # Off by default so logins work over plain http://127.0.0.1. Turn it on
+    # when the dashboard is only ever reached over HTTPS.
+    SESSION_COOKIE_SECURE=bool(store.load_settings().dashboard_cookie_secure),
+)
 
+# Routes that must answer before anyone is authenticated.
+_OPEN_PATHS = frozenset({"/api/health", "/api/auth/state", "/api/login"})
 
-def _require_auth():
-    auth = request.headers.get("Authorization", "")
-    if auth != f"Bearer {DASHBOARD_TOKEN}":
-        return jsonify({"error": "Unauthorized"}), 401
-    return None
-
-
-# GET /api/auth/check is the one read that must still prove the token, so the
-# UI can tell you the token is wrong before you click something destructive.
+# The one read that must prove credentials, so the UI can report a bad token
+# or an expired session before anything destructive is clicked.
 _AUTHENTICATED_READS = frozenset({"/api/auth/check"})
+
+# Login attempts per source address, to blunt brute force over a tunnel.
+_LOGIN_ATTEMPTS: dict[str, list[float]] = {}
+_LOGIN_WINDOW_SECONDS = 300
+_LOGIN_MAX_ATTEMPTS = 10
+
+
+def _login_throttled(addr: str) -> bool:
+    now = time.monotonic()
+    recent = [t for t in _LOGIN_ATTEMPTS.get(addr, []) if now - t < _LOGIN_WINDOW_SECONDS]
+    _LOGIN_ATTEMPTS[addr] = recent
+    return len(recent) >= _LOGIN_MAX_ATTEMPTS
+
+
+def _record_login_attempt(addr: str) -> None:
+    _LOGIN_ATTEMPTS.setdefault(addr, []).append(time.monotonic())
+
+
+def _has_bearer_token() -> bool:
+    header = request.headers.get("Authorization", "")
+    expected = f"Bearer {DASHBOARD_TOKEN}"
+    return hmac.compare_digest(header, expected)
+
+
+def _is_logged_in() -> bool:
+    return bool(session.get("authenticated"))
+
+
+def _credentialed() -> bool:
+    """A session cookie or the bearer token. Either is sufficient."""
+    return _is_logged_in() or _has_bearer_token()
+
+
+def _unauthorized(message: str = "Unauthorized"):
+    return jsonify({"error": message, "login_required": auth.password_is_set()}), 401
 
 
 @app.before_request
 def check_auth():
-    if request.method == "OPTIONS" or request.path == "/api/health":
+    if request.method == "OPTIONS" or request.path in _OPEN_PATHS:
         return None
+
+    # With a password set the dashboard is assumed reachable from elsewhere —
+    # through a Tailscale tunnel, say — where the loopback bind proves nothing,
+    # because the proxy makes every request look local. Reads are closed too.
+    if auth.password_is_set():
+        if request.path.startswith("/api/") and not _credentialed():
+            return _unauthorized("Log in to use the dashboard.")
+        return None
+
+    # No password: the old model. Reads open on localhost, writes need a token.
     if request.path in _AUTHENTICATED_READS:
-        return _require_auth()
+        return None if _credentialed() else _unauthorized()
     if request.path.startswith("/api/") and request.method != "GET":
-        return _require_auth()
+        return None if _credentialed() else _unauthorized()
     return None
 
 
@@ -71,6 +124,47 @@ def index():
 
 @app.get("/api/health")
 def health():
+    return jsonify({"ok": True})
+
+
+@app.get("/api/auth/state")
+def auth_state():
+    """What the UI needs to decide between a login form and a token field."""
+    return jsonify(
+        {
+            "password_set": auth.password_is_set(),
+            "logged_in": _is_logged_in(),
+            "authenticated": _credentialed(),
+        }
+    )
+
+
+@app.post("/api/login")
+def login():
+    if not auth.password_is_set():
+        return jsonify({"error": "No dashboard password is set."}), 400
+
+    addr = request.remote_addr or "unknown"
+    if _login_throttled(addr):
+        return jsonify(
+            {"error": "Too many attempts. Wait a few minutes and try again."}
+        ), 429
+
+    data = request.get_json(silent=True) or {}
+    if not auth.verify_password(str(data.get("password") or "")):
+        _record_login_attempt(addr)
+        return jsonify({"error": "Wrong password."}), 401
+
+    session.clear()
+    session["authenticated"] = True
+    session.permanent = True
+    _LOGIN_ATTEMPTS.pop(addr, None)
+    return jsonify({"ok": True})
+
+
+@app.post("/api/logout")
+def logout():
+    session.clear()
     return jsonify({"ok": True})
 
 

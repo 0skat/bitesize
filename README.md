@@ -196,6 +196,34 @@ Two things worth knowing before trying to reason about this yourself:
 
 If usage is still too high, `ai_backend=ollama` removes it entirely. On Apple silicon with 24 GB, `qwen2.5:14b` is a better choice than the repo's default `llama3:8b` — it follows JSON instructions more reliably, which is all this pipeline asks of a model.
 
+### Reaching the dashboard from a tablet
+
+The dashboard binds to `127.0.0.1` and should stay there. To pick from an iPad, put a tunnel in front of it rather than opening the port.
+
+**1. Set a password first.** This is not optional, and the reason is specific:
+
+```bash
+./run.sh set-password
+```
+
+Without one, the dashboard trusts its loopback bind — `GET` routes are open and only writes need a token. A tunnel breaks that assumption, because it forwards from the tailnet to `127.0.0.1`, so every request arrives looking local. With a password set, **every** `/api/` route needs a session or the bearer token, reads included; static files stay open so the login page can load.
+
+**2. Expose it through Tailscale.** Install Tailscale on the Mac and the iPad and sign both into the same tailnet, then:
+
+```bash
+tailscale serve --bg 8765
+tailscale serve status        # prints the https://<machine>.<tailnet>.ts.net URL
+```
+
+Tailscale terminates TLS and forwards to `127.0.0.1:8765`, so the app keeps its loopback bind and you get HTTPS without certificates. Open that URL on the iPad and log in. Once you only ever reach it that way, turn on `dashboard_cookie_secure` so the session cookie refuses plain HTTP.
+
+Plain `ssh -L 8765:localhost:8765 you@mac` works too, and needs no new software, but the tunnel has to be re-established and iOS SSH clients make that tedious.
+
+> [!WARNING]
+> Do not reach for `HOST = "0.0.0.0"`. There is no TLS in the application, one account, and no rate limiting beyond the login throttle. The tunnel is what makes this safe.
+
+Passwords are stored as an scrypt hash with a per-password salt in `data/dashboard_auth.json` (mode `0600`); the plaintext is never written. `./run.sh set-password --clear` returns to the token-only model.
+
 ### Picking the day's stories yourself
 
 The expensive half of a run is downloading article bodies and summarising them, and that used to happen to everything the title screen kept — eighty articles to publish twenty-five. Putting the decision between those two phases is both cheaper and more controllable: **only what you keep gets fetched and summarised.**

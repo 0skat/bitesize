@@ -7,6 +7,20 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+  <div id="login-gate" class="gate" hidden>
+    <form id="login-form" class="gate-card">
+      <h1>BiteSIze</h1>
+      <p class="gate-note">This dashboard needs a password.</p>
+      <label for="login-password">Password</label>
+      <input id="login-password" type="password" autocomplete="current-password"
+             autofocus required>
+      <button type="submit" class="primary">Log in</button>
+      <p id="login-status" class="status"></p>
+      <p class="gate-hint">Set or change it with <code>./run.sh set-password</code></p>
+    </form>
+  </div>
+
+  <div id="app-shell" hidden>
   <header>
     <h1>BiteSIze</h1>
     <p class="subtitle">Settings dashboard — changes apply to the CLI immediately</p>
@@ -103,7 +117,9 @@
 
   <footer>
     <p>Backlog: AI summary preview, magazine covers</p>
+    <p><button id="logout" class="link-btn" hidden>Log out</button></p>
   </footer>
+  </div>
 
   <script src="/app.js"></script>
 </body>

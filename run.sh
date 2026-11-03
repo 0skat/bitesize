@@ -23,6 +23,10 @@ case "${1:-digest}" in
   dashboard)
     exec "$VENV_DIR/bin/python" "$SCRIPT_DIR/dashboard.py"
     ;;
+  set-password)
+    shift 2>/dev/null || true
+    exec "$VENV_DIR/bin/python" "$SCRIPT_DIR/scripts/set-dashboard-password.py" "$@"
+    ;;
   pool)
     shift 2>/dev/null || true
     exec "$VENV_DIR/bin/python" "$SCRIPT_DIR/main.py" --all --pool "$@"

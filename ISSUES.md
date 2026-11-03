@@ -31,12 +31,15 @@ Seen on 29–30 August 2026 in `output/logs/digest-stdout.log`. Hypothesis: time
 
 No settings were actually corrupted — the form had not been saved since those settings were added.
 
-## Dashboard reads have no token
+## Dashboard reads have no token — fixed by setting a password
 
-**Expected:** On a shared machine, settings are not readable by every local process.  
-**Actual:** Write APIs require a Bearer token. `GET /api/settings` and `GET /api/sources` do not. SMTP password is masked on GET; everything else is plaintext on localhost.
+**Expected:** On a shared machine, or behind a tunnel, settings are not readable by anything that can reach the port.
 
-This matches the documented single-user threat model. It is still an issue if the Mac is shared.
+**Actual:** With no password set, `GET /api/settings`, `/api/sources`, `/api/issues` and `/api/pools` are open; only writes need the Bearer token. The SMTP password is masked on GET, but everything else is plaintext.
+
+**Fixed** for anyone who runs `./run.sh set-password`: with a password set the dashboard fails closed on every `/api/` route, reads included, accepting a session cookie or the bearer token. Static files stay open so the login page loads. The open-read model remains the default because it is still correct for a single-user machine on loopback.
+
+This mattered more than it looked: `tailscale serve` forwards from the tailnet to `127.0.0.1`, so "local means trusted" would have exposed settings to the whole tailnet. See SECURITY.md.
 
 ## Work is not on `main`, and there is no remote
 
