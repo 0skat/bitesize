@@ -9,6 +9,7 @@ from pathlib import Path
 from flask import Flask, jsonify, request, send_from_directory
 
 import issues as issue_store
+import pool as pool_store
 import settings_store as store
 from config import BASE_DIR, load_env, reload_settings
 from kindle import send_test_email
@@ -229,6 +230,92 @@ def delete_issue_api(issue_id: int):
     return jsonify({"ok": True})
 
 
+@app.get("/api/pools")
+def get_pools_api():
+    limit = request.args.get("limit", default=20, type=int)
+    return jsonify({"pools": pool_store.list_pools(max(1, min(int(limit or 20), 100)))})
+
+
+@app.get("/api/pools/<int:pool_id>")
+def get_pool_api(pool_id: int):
+    pool = pool_store.load_pool(pool_id)
+    if pool is None:
+        return jsonify({"error": f"No pool {pool_id}"}), 404
+    return jsonify(pool)
+
+
+@app.put("/api/pools/<int:pool_id>/picks")
+def put_pool_picks_api(pool_id: int):
+    """Mark cards keep / skip / undecided."""
+    data = request.get_json(silent=True) or {}
+    ids = data.get("ids")
+    pick = data.get("pick")
+    if not isinstance(ids, list) or not ids:
+        return jsonify({"error": "ids must be a non-empty list"}), 400
+    try:
+        ids = [int(i) for i in ids]
+    except (TypeError, ValueError):
+        return jsonify({"error": "ids must be integers"}), 400
+    try:
+        changed = pool_store.set_picks(ids, str(pick))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    pool = pool_store.load_pool(pool_id)
+    if pool is None:
+        return jsonify({"error": f"No pool {pool_id}"}), 404
+    return jsonify({"changed": changed, "pool": pool})
+
+
+@app.post("/api/pools/refresh")
+def post_pool_refresh_api():
+    """Fetch and screen a fresh pool. Two AI calls, no article downloads."""
+    import main as digest
+
+    settings = store.load_settings()
+    tree = store.load_sources_tree(enabled_only=True)
+    if not tree:
+        return jsonify({"error": "No RSS sources configured"}), 400
+
+    pool_id = digest.run_pool(tree, settings)
+    if pool_id is None:
+        return jsonify({"error": "No candidates found"}), 400
+    return jsonify({"ok": True, "pool": pool_store.load_pool(pool_id)}), 201
+
+
+@app.post("/api/pools/<int:pool_id>/build")
+def post_pool_build_api(pool_id: int):
+    """Summarise the kept articles and publish them. Costs AI calls."""
+    import main as digest
+
+    data = request.get_json(silent=True) or {}
+    deliver = bool(data.get("deliver", True))
+    settings = store.load_settings()
+
+    result = digest.run_build(
+        pool_id, settings, no_kindle=not deliver, no_books=not deliver
+    )
+    if result is None:
+        return jsonify({"error": "Nothing built — pick some articles first"}), 400
+
+    out_path, issue_id = result
+    return jsonify(
+        {
+            "ok": True,
+            "issue_id": issue_id,
+            "epub_name": out_path.name,
+            "pool": pool_store.load_pool(pool_id),
+        }
+    )
+
+
+@app.delete("/api/pools/<int:pool_id>")
+def delete_pool_api(pool_id: int):
+    if not pool_store.delete_pool(pool_id):
+        return jsonify({"error": f"No pool {pool_id}"}), 404
+    return jsonify({"ok": True})
+
+
 @app.post("/api/kindle/test")
 def kindle_test():
     settings = store.load_settings()
@@ -241,6 +328,7 @@ def main() -> None:
     store.init_db()
     store.migrate_from_files_if_empty()
     issue_store.init_db()
+    pool_store.init_db()
     print(f"BiteSIze dashboard → http://{HOST}:{PORT}")
     app.run(host=HOST, port=PORT, debug=False)
 

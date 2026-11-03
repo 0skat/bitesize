@@ -12,6 +12,7 @@ a Kindle-friendly EPUB in the ./output/ folder.
 
 import argparse
 import sys
+from pathlib import Path
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -38,6 +39,7 @@ from magazine_layers import article_rank_sort_key
 from epub import generate_epub
 from books import copy_to_icloud_books
 import issues
+import pool as pool_store
 from kindle import send_to_kindle
 from gmail import get_gmail_threads
 from gmail_processor import process_email_threads, generate_inbox_cover
@@ -214,12 +216,320 @@ def _prune_old_issues(keep: int) -> None:
             console.print(f"  [yellow]⚠  could not prune {stale.name}: {e}[/yellow]")
 
 
+def assemble_and_deliver(
+    processed_sections: dict[str, list],
+    inbox_articles: list[dict],
+    calendar_articles: list[dict],
+    settings,
+    *,
+    no_kindle: bool = False,
+    no_books: bool = False,
+) -> tuple[Path, int] | None:
+    """Phase three: covers, EPUB, record the issue, then deliver.
+
+    Shared by the unattended run and a build from a hand-picked pool, so both
+    produce an identical book and both get recorded for later review.
+    Returns (path, issue id), or None when there is nothing to publish.
+    """
+    if not any(processed_sections.values()):
+        console.print("[yellow]Nothing to publish — no sections have articles.[/yellow]")
+        return None
+
+    # ── 4. Generate section covers ────────────────────────────────────────────
+    console.print()
+    console.print("[cyan]📰  Generating section covers…[/cyan]")
+
+    section_covers: dict[str, dict] = {}
+    for cat, articles in processed_sections.items():
+        if cat in _CUSTOM_COVER_SECTIONS or not articles:
+            continue
+        with console.status(f"  {cat}…"):
+            section_covers[cat] = generate_section_cover(cat, articles)
+        status = "✓" if section_covers[cat] else "⚠ fallback"
+        console.print(f"  [green]{status}[/green]  {cat}")
+
+    if inbox_articles:
+        with console.status("  Inbox…"):
+            section_covers["Inbox"] = generate_inbox_cover(inbox_articles)
+        status = "✓" if section_covers.get("Inbox") else "⚠ fallback"
+        console.print(f"  [green]{status}[/green]  Inbox")
+
+    if calendar_articles:
+        with console.status("  Calendar…"):
+            section_covers["Calendar"] = generate_calendar_cover(calendar_articles)
+        status = "✓" if section_covers.get("Calendar") else "⚠ fallback"
+        console.print(f"  [green]{status}[/green]  Calendar")
+
+    # ── 5. Generate global cover ──────────────────────────────────────────────
+    with console.status("  Global cover…"):
+        global_cover = generate_global_cover(section_covers)
+    console.print(
+        f"  [green]{'✓' if global_cover else '⚠ fallback'}[/green]  Global cover"
+    )
+
+    # ── 6. Generate EPUB ──────────────────────────────────────────────────────
+    console.print()
+    now      = datetime.now()
+    filename = f"{epub_label('digest_title')} - {format_digest_timestamp(now)}.epub"
+    out_path = OUTPUT_DIR / filename
+
+    with console.status("[cyan]Generating EPUB…[/cyan]"):
+        generate_epub(processed_sections, section_covers, global_cover, out_path)
+
+    # Record what was picked so the dashboard can review it and drop stories
+    # without another AI pass. Never let bookkeeping sink a finished digest.
+    issue_id = 0
+    try:
+        issue_id = issues.record_issue(
+            out_path, processed_sections, _overflow_section_name()
+        )
+        console.print(f"   [dim]issue #{issue_id} recorded for review[/dim]")
+        issues.prune_issues(settings.output_keep_issues)
+    except Exception as e:  # pragma: no cover - defensive
+        console.print(f"  [yellow]⚠  could not record issue: {e}[/yellow]")
+
+    _prune_old_issues(settings.output_keep_issues)
+
+    total_final = sum(len(v) for v in processed_sections.values())
+    console.print(f"\n[bold green]✅  Done![/bold green]  {total_final} articles saved.")
+    console.print(f"   [dim]{out_path}[/dim]\n")
+
+    # ── 7. Send to Kindle ─────────────────────────────────────────────────────
+    if no_kindle or not settings.kindle_delivery_enabled:
+        reason = "--no-kindle" if no_kindle else "kindle_delivery_enabled=false"
+        console.print(f"[dim]  Skipped Kindle delivery ({reason}).[/dim]")
+    else:
+        console.print("[cyan]📬  Sending to Kindle…[/cyan]")
+        send_to_kindle(out_path, settings)
+
+    # ── 8. Copy to iCloud Books (syncs to iPhone via iCloud) ──────────────────
+    if no_books or not settings.books_delivery_enabled:
+        reason = "--no-books" if no_books else "books_delivery_enabled=false"
+        console.print(f"[dim]  Skipped iCloud Books copy ({reason}).[/dim]")
+    else:
+        console.print("[cyan]📚  Copying to iCloud Books…[/cyan]")
+        copy_to_icloud_books(out_path, settings)
+
+    return out_path, issue_id
+
+
+def fetch_bodies(articles: list[dict]) -> int:
+    """Phase two: download each article's text in place. Returns how many hit.
+
+    An article whose fetch fails keeps whatever the feed gave us, so it can
+    still be summarised from its snippet or dropped later as headline-only.
+    """
+    if not articles:
+        return 0
+
+    reset_stats()
+    total = len(articles)
+    fetched = 0
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        console=console,
+        transient=True,
+    ) as prog:
+        task = prog.add_task(
+            f"Fetching full content for {total} articles…", total=total
+        )
+        with ThreadPoolExecutor(max_workers=10) as workers:
+            future_to_art = {
+                workers.submit(fetch_article_content, art["url"]): art
+                for art in articles
+            }
+            for fut in as_completed(future_to_art):
+                art = future_to_art[fut]
+                content = fut.result()
+                if content:
+                    if not art.get("rss_snippet"):
+                        art["rss_snippet"] = art.get("content", "")
+                    art["content"] = content
+                    fetched += 1
+                prog.advance(task)
+
+    console.print(
+        f"[green]✓[/green]  Full content retrieved for "
+        f"[bold]{fetched}[/bold] / {total} articles"
+        + (f" [dim]({total - fetched} unavailable/paywalled)[/dim]"
+           if fetched < total else "")
+    )
+    log_summary(console)
+    return fetched
+
+
+def fetch_and_screen(selected: dict, settings) -> list[dict]:
+    """Phase one: fetch every feed, drop duplicates, screen on titles.
+
+    Returns the surviving candidates, ranked, each tagged with its category.
+    Deliberately stops before the body fetch: everything up to here is cheap
+    (two AI calls, no article downloads), which is what makes it safe to run
+    unattended and to hand to a human for picking.
+    """
+    if not selected:
+        return []
+
+    total_feeds = sum(len(v) for v in selected.values())
+    raw_sections: dict[str, list] = {cat: [] for cat in selected}
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        console=console,
+        transient=True,
+    ) as prog:
+        task = prog.add_task(f"Fetching {total_feeds} feeds…", total=total_feeds)
+
+        with ThreadPoolExecutor(max_workers=10) as workers:
+            futures = {
+                workers.submit(fetch_feed, name, url): cat
+                for cat, srcs in selected.items()
+                for name, url in srcs.items()
+            }
+            for fut in as_completed(futures):
+                cat = futures[fut]
+                for art in fut.result():
+                    art["category"] = cat
+                    raw_sections[cat].append(art)
+                prog.advance(task)
+
+    total_raw = sum(len(v) for v in raw_sections.values())
+    console.print(f"[green]✓[/green]  Fetched [bold]{total_raw}[/bold] raw articles")
+
+    flat_raw = [art for arts in raw_sections.values() for art in arts]
+    flat_raw, dupes = dedupe_articles(flat_raw)
+    _log_dedupe(dupes)
+
+    screened, screened_out = prefilter_by_title(flat_raw, settings.prefilter_keep)
+    if screened_out:
+        console.print(
+            f"  [dim]✗  screened out {len(screened_out)} by title "
+            f"(kept {len(screened)})[/dim]"
+        )
+    return screened
+
+
+def run_pool(selected: dict, settings) -> int | None:
+    """Build a candidate pool and stop. Cheap enough to run unattended."""
+    candidates = fetch_and_screen(selected, settings)
+    if not candidates:
+        console.print("[yellow]No candidates — nothing to pool.[/yellow]")
+        return None
+
+    pool_id = pool_store.record_pool(candidates)
+    pool_store.prune_pools(settings.output_keep_issues)
+    by_section: Counter = Counter(a.get("category", "") for a in candidates)
+    console.print(
+        f"\n[bold green]✅  Pool #{pool_id}[/bold green]  "
+        f"{len(candidates)} candidates across {len(by_section)} sections."
+    )
+    for section, count in by_section.most_common():
+        console.print(f"   [dim]{section}: {count}[/dim]")
+    console.print(
+        "\n   [dim]Pick them in the dashboard's Pool tab, then build.[/dim]\n"
+    )
+    return pool_id
+
+
+def run_build(
+    pool_id: int | None,
+    settings,
+    *,
+    no_kindle: bool = False,
+    no_books: bool = False,
+) -> tuple[Path, int] | None:
+    """Summarise a pool's kept articles and publish them.
+
+    The human has already curated, so the score threshold and the per-issue cap
+    are not applied — the picks are the issue. Sections are still ordered by
+    score, and the result is recorded like any other issue.
+    """
+    if pool_id is None:
+        pool_id = pool_store.latest_pool_id()
+    if pool_id is None:
+        console.print(
+            "[red]Error:[/red] No pool to build. Run "
+            "[bold]./run.sh pool[/bold] first."
+        )
+        return None
+
+    picked = pool_store.picked_articles(pool_id)
+    if not picked:
+        pool = pool_store.load_pool(pool_id)
+        total = pool["stored"] if pool else 0
+        console.print(
+            f"[yellow]Pool #{pool_id} has no kept articles "
+            f"({total} candidates waiting).[/yellow]\n"
+            "   [dim]Pick some in the dashboard's Pool tab, then build again.[/dim]"
+        )
+        return None
+
+    console.print(
+        f"[cyan]Building from pool #{pool_id} — "
+        f"[bold]{len(picked)}[/bold] picked articles[/cyan]"
+    )
+    fetch_bodies(picked)
+
+    console.print()
+    console.print("[cyan]🤖  Running AI processing…[/cyan]")
+    with console.status("  Summarising your picks…"):
+        processed = process_articles(picked)
+
+    kept, dropped = filter_headline_only(processed)
+    _log_headline_drops(dropped)
+    if not kept:
+        console.print("[yellow]No readable articles among your picks.[/yellow]")
+        return None
+
+    sections: dict[str, list] = {}
+    for art in kept:
+        sections.setdefault(art.get("category", "") or "Digest", []).append(art)
+    for arts in sections.values():
+        arts.sort(key=article_rank_sort_key)
+
+    console.print(
+        f"  [green]✓[/green]  [bold]{len(kept)}[/bold] articles kept "
+        f"across {len(sections)} sections"
+    )
+
+    result = assemble_and_deliver(
+        sections, [], [], settings, no_kindle=no_kindle, no_books=no_books
+    )
+    if result:
+        _out, issue_id = result
+        if issue_id:
+            pool_store.mark_built(pool_id, issue_id)
+    return result
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="BiteSIze news digest for Kindle")
     parser.add_argument(
         "--all",
         action="store_true",
         help="Include all categories and sources without prompting",
+    )
+    parser.add_argument(
+        "--pool",
+        action="store_true",
+        help="Fetch and screen only; store a candidate pool to pick from",
+    )
+    parser.add_argument(
+        "--build",
+        action="store_true",
+        help="Summarise the articles kept in a pool and publish them",
+    )
+    parser.add_argument(
+        "--pool-id",
+        type=int,
+        default=None,
+        help="Which pool to build (default: the newest)",
     )
     parser.add_argument(
         "--no-kindle",
@@ -252,6 +562,17 @@ def main() -> None:
 
     if not selected and not any(integrations.values()):
         console.print("[yellow]No sources selected — exiting.[/yellow]")
+        return
+
+    if args.pool:
+        run_pool(selected, settings)
+        return
+
+    if args.build:
+        run_build(
+            args.pool_id, settings,
+            no_kindle=args.no_kindle, no_books=args.no_books,
+        )
         return
 
     inbox_articles: list[dict] = []
@@ -293,104 +614,20 @@ def main() -> None:
                 "  [yellow]⚠  No calendar events — skipping Calendar section[/yellow]"
             )
 
-    total_feeds = sum(len(v) for v in selected.values())
-
-    # ── 1. Fetch feeds in parallel ────────────────────────────────────────────
-    raw_sections: dict[str, list] = {cat: [] for cat in selected}
-    total_raw = 0
-    fetched = 0
-
-    if selected:
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            console=console,
-            transient=True,
-        ) as prog:
-            task = prog.add_task(f"Fetching {total_feeds} feeds…", total=total_feeds)
-
-            with ThreadPoolExecutor(max_workers=10) as pool:
-                futures = {
-                    pool.submit(fetch_feed, name, url): cat
-                    for cat, srcs in selected.items()
-                    for name, url in srcs.items()
-                }
-                for fut in as_completed(futures):
-                    cat = futures[fut]
-                    articles = fut.result()
-                    for art in articles:
-                        art["category"] = cat
-                    raw_sections[cat].extend(articles)
-                    prog.advance(task)
-
+    screened = fetch_and_screen(selected, settings)
+    raw_sections = {cat: [] for cat in selected}
+    for art in screened:
+        cat = art.get("category", "")
+        if cat in raw_sections:
+            raw_sections[cat].append(art)
     total_raw = sum(len(v) for v in raw_sections.values())
-    if selected:
-        console.print(f"[green]✓[/green]  Fetched [bold]{total_raw}[/bold] raw articles")
-
-        # ── 1.5 Drop cross-feed duplicates, then screen on titles ─────────────
-        # Both run before the body fetch so a rejected story costs neither a
-        # network round trip nor an AI call.
-        flat_raw = [art for arts in raw_sections.values() for art in arts]
-        flat_raw, dupes = dedupe_articles(flat_raw)
-        _log_dedupe(dupes)
-
-        screened, screened_out = prefilter_by_title(
-            flat_raw, settings.prefilter_keep
-        )
-        if screened_out:
-            console.print(
-                f"  [dim]✗  screened out {len(screened_out)} by title "
-                f"(kept {len(screened)})[/dim]"
-            )
-
-        raw_sections = {cat: [] for cat in selected}
-        for art in screened:
-            cat = art.get("category", "")
-            if cat in raw_sections:
-                raw_sections[cat].append(art)
-        total_raw = sum(len(v) for v in raw_sections.values())
+    fetched = 0
 
     # ── 2. Fetch full article content in parallel ─────────────────────────────
     if selected:
-        flat_for_content = [art for arts in raw_sections.values() for art in arts]
-        reset_stats()
-
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            console=console,
-            transient=True,
-        ) as prog:
-            task = prog.add_task(
-                f"Fetching full content for {total_raw} articles…", total=total_raw
-            )
-            with ThreadPoolExecutor(max_workers=10) as pool:
-                future_to_art = {
-                    pool.submit(fetch_article_content, art["url"]): art
-                    for art in flat_for_content
-                }
-                fetched = 0
-                for fut in as_completed(future_to_art):
-                    art = future_to_art[fut]
-                    content = fut.result()
-                    if content:
-                        if not art.get("rss_snippet"):
-                            art["rss_snippet"] = art.get("content", "")
-                        art["content"] = content
-                        fetched += 1
-                    prog.advance(task)
-
-        console.print(
-            f"[green]✓[/green]  Full content retrieved for "
-            f"[bold]{fetched}[/bold] / {total_raw} articles"
-            + (f" [dim]({total_raw - fetched} unavailable/paywalled)[/dim]"
-               if fetched < total_raw else "")
+        fetched = fetch_bodies(
+            [art for arts in raw_sections.values() for art in arts]
         )
-        log_summary(console)
 
     # ── 3. AI processing (Gemini) ─────────────────────────────────────────────
     kept_flat: list[dict] = []
@@ -448,79 +685,14 @@ def main() -> None:
         console.print("[yellow]No readable articles left — exiting.[/yellow]")
         return
 
-    # ── 4. Generate section covers ────────────────────────────────────────────
-    console.print()
-    console.print("[cyan]📰  Generating section covers…[/cyan]")
-
-    section_covers: dict[str, dict] = {}
-    for cat, articles in processed_sections.items():
-        if cat in _CUSTOM_COVER_SECTIONS or not articles:
-            continue
-        with console.status(f"  {cat}…"):
-            section_covers[cat] = generate_section_cover(cat, articles)
-        status = "✓" if section_covers[cat] else "⚠ fallback"
-        console.print(f"  [green]{status}[/green]  {cat}")
-
-    if inbox_articles:
-        with console.status("  Inbox…"):
-            section_covers["Inbox"] = generate_inbox_cover(inbox_articles)
-        status = "✓" if section_covers.get("Inbox") else "⚠ fallback"
-        console.print(f"  [green]{status}[/green]  Inbox")
-
-    if calendar_articles:
-        with console.status("  Calendar…"):
-            section_covers["Calendar"] = generate_calendar_cover(calendar_articles)
-        status = "✓" if section_covers.get("Calendar") else "⚠ fallback"
-        console.print(f"  [green]{status}[/green]  Calendar")
-
-    # ── 5. Generate global cover ──────────────────────────────────────────────
-    with console.status("  Global cover…"):
-        global_cover = generate_global_cover(section_covers)
-    console.print(
-        f"  [green]{'✓' if global_cover else '⚠ fallback'}[/green]  Global cover"
+    assemble_and_deliver(
+        processed_sections,
+        inbox_articles,
+        calendar_articles,
+        settings,
+        no_kindle=args.no_kindle,
+        no_books=args.no_books,
     )
-
-    # ── 6. Generate EPUB ──────────────────────────────────────────────────────
-    console.print()
-    now      = datetime.now()
-    filename = f"{epub_label('digest_title')} - {format_digest_timestamp(now)}.epub"
-    out_path = OUTPUT_DIR / filename
-
-    with console.status("[cyan]Generating EPUB…[/cyan]"):
-        generate_epub(processed_sections, section_covers, global_cover, out_path)
-
-    # Record what was picked so the dashboard can review it and drop stories
-    # without another AI pass. Never let bookkeeping sink a finished digest.
-    try:
-        issue_id = issues.record_issue(
-            out_path, processed_sections, _overflow_section_name()
-        )
-        console.print(f"   [dim]issue #{issue_id} recorded for review[/dim]")
-        issues.prune_issues(settings.output_keep_issues)
-    except Exception as e:  # pragma: no cover - defensive
-        console.print(f"  [yellow]⚠  could not record issue: {e}[/yellow]")
-
-    _prune_old_issues(settings.output_keep_issues)
-
-    total_final = sum(len(v) for v in processed_sections.values())
-    console.print(f"\n[bold green]✅  Done![/bold green]  {total_final} articles saved.")
-    console.print(f"   [dim]{out_path}[/dim]\n")
-
-    # ── 7. Send to Kindle ─────────────────────────────────────────────────────
-    if args.no_kindle or not settings.kindle_delivery_enabled:
-        reason = "--no-kindle" if args.no_kindle else "kindle_delivery_enabled=false"
-        console.print(f"[dim]  Skipped Kindle delivery ({reason}).[/dim]")
-    else:
-        console.print("[cyan]📬  Sending to Kindle…[/cyan]")
-        send_to_kindle(out_path, settings)
-
-    # ── 8. Copy to iCloud Books (syncs to iPhone via iCloud) ──────────────────
-    if args.no_books or not settings.books_delivery_enabled:
-        reason = "--no-books" if args.no_books else "books_delivery_enabled=false"
-        console.print(f"[dim]  Skipped iCloud Books copy ({reason}).[/dim]")
-    else:
-        console.print("[cyan]📚  Copying to iCloud Books…[/cyan]")
-        copy_to_icloud_books(out_path, settings)
 
 
 if __name__ == "__main__":

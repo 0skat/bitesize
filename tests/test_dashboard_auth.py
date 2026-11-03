@@ -53,7 +53,8 @@ def test_auth_check_rejects_a_missing_token(client):
 
 
 @pytest.mark.parametrize(
-    "path", ["/api/health", "/api/settings", "/api/sources", "/api/issues"]
+    "path",
+    ["/api/health", "/api/settings", "/api/sources", "/api/issues", "/api/pools"],
 )
 def test_reads_do_not_need_a_token(client, path):
     assert client.get(path).status_code == 200
@@ -93,6 +94,10 @@ def test_delete_category_with_a_token_is_allowed(client, token):
         ("put", "/api/issues/1/articles"),
         ("post", "/api/issues/1/rebuild"),
         ("delete", "/api/issues/1"),
+        ("put", "/api/pools/1/picks"),
+        ("post", "/api/pools/1/build"),
+        ("post", "/api/pools/refresh"),
+        ("delete", "/api/pools/1"),
     ],
 )
 def test_every_write_route_requires_a_token(client, method, path):

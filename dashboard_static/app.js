@@ -451,6 +451,10 @@ $$(".tab").forEach((btn) => {
       previewLoaded = true;
       loadPreview();
     }
+    if (btn.dataset.tab === "pool" && !poolsLoaded) {
+      poolsLoaded = true;
+      loadPoolList().catch((e) => setStatus($("#pool-status"), e.message, false));
+    }
     if (btn.dataset.tab === "issue" && !issuesLoaded) {
       issuesLoaded = true;
       loadIssueList().catch((e) => setStatus($("#issue-status"), e.message, false));
@@ -662,3 +666,312 @@ $("#rebuild-issue").onclick = async () => {
     btn.disabled = false;
   }
 };
+
+// ── Pool: swipe through screened headlines ──────────────────────────────────
+// Only kept articles get fetched and summarised, so this is where picking
+// fewer actually saves AI calls. Nothing is published until Build.
+
+let currentPool = null;
+let poolQueue = [];       // ids still undecided, in rank order
+let poolHistory = [];     // {id, pick} for Undo
+let poolsLoaded = false;
+
+function poolLabel(p) {
+  const when = (p.created_at || "").replace("T", " ");
+  const built = p.built_issue_id ? ` → issue #${p.built_issue_id}` : "";
+  return `#${p.id}  ${when}  (${p.kept} kept, ${p.undecided} left)${built}`;
+}
+
+async function loadPoolList(selectId) {
+  const picker = $("#pool-picker");
+  const data = await api("/api/pools?limit=30");
+  const list = data.pools || [];
+  picker.innerHTML = "";
+  if (!list.length) {
+    const o = document.createElement("option");
+    o.value = "";
+    o.textContent = "No pool yet — press New pool";
+    picker.appendChild(o);
+    currentPool = null;
+    $("#pool-card").innerHTML = "<p class='stack-empty'>No pool yet.</p>";
+    $("#pool-tally").textContent = "";
+    return;
+  }
+  for (const p of list) {
+    const o = document.createElement("option");
+    o.value = p.id;
+    o.textContent = poolLabel(p);
+    picker.appendChild(o);
+  }
+  picker.value = String(selectId ?? list[0].id);
+  await loadPool(picker.value);
+}
+
+async function loadPool(id) {
+  if (!id) return;
+  try {
+    currentPool = await api(`/api/pools/${id}`);
+    poolHistory = [];
+    poolQueue = currentPool.articles
+      .filter((a) => a.pick === "undecided")
+      .map((a) => a.id);
+    renderPool();
+  } catch (e) {
+    setStatus($("#pool-status"), e.message, false);
+  }
+}
+
+function poolCardById(id) {
+  return currentPool?.articles.find((a) => a.id === id) || null;
+}
+
+function renderTally() {
+  if (!currentPool) return;
+  const p = currentPool;
+  $("#pool-tally").textContent =
+    `${p.kept} kept · ${p.skipped} skipped · ${p.undecided} undecided ` +
+    `of ${p.stored}` + (p.built_issue_id ? ` — built as issue #${p.built_issue_id}` : "");
+}
+
+function renderPool() {
+  renderTally();
+  renderPoolCard();
+  renderPoolList();
+}
+
+function renderPoolCard() {
+  const el = $("#pool-card");
+  el.style.transform = "";
+  el.style.opacity = "";
+  const id = poolQueue[0];
+  const card = id ? poolCardById(id) : null;
+
+  if (!card) {
+    el.innerHTML =
+      "<p class='stack-empty'>Nothing left undecided. " +
+      "Press <strong>Build issue</strong> when you are happy.</p>";
+    return;
+  }
+
+  el.innerHTML = "";
+  const top = document.createElement("div");
+  top.className = "card-top";
+  top.textContent = `${card.section} · ${card.source}` +
+    (card.published ? ` · ${card.published}` : "");
+
+  const score = document.createElement("span");
+  score.className = "card-score";
+  score.textContent = card.prefilter_score;
+  score.title = "screen score out of 100";
+  top.appendChild(score);
+
+  const h = document.createElement("h3");
+  h.className = "card-title";
+  if (card.url) {
+    const a = document.createElement("a");
+    a.href = card.url;
+    a.target = "_blank";
+    a.rel = "noreferrer noopener";
+    a.textContent = card.title;
+    h.appendChild(a);
+  } else {
+    h.textContent = card.title;
+  }
+
+  const sn = document.createElement("p");
+  sn.className = "card-snippet";
+  sn.textContent = card.snippet || "(no preview text in the feed)";
+
+  const left = document.createElement("p");
+  left.className = "card-left";
+  left.textContent = `${poolQueue.length} left to decide`;
+
+  el.append(top, h, sn, left);
+}
+
+function renderPoolList() {
+  const root = $("#pool-list");
+  if (!root || !currentPool) return;
+  root.innerHTML = "";
+  const bySection = {};
+  for (const a of currentPool.articles) {
+    (bySection[a.section || "—"] ||= []).push(a);
+  }
+  for (const section of Object.keys(bySection).sort()) {
+    const card = document.createElement("div");
+    card.className = "group";
+    const h = document.createElement("h2");
+    const kept = bySection[section].filter((a) => a.pick === "keep").length;
+    h.textContent = `${section} (${kept}/${bySection[section].length} kept)`;
+    card.appendChild(h);
+    for (const a of bySection[section]) {
+      const row = document.createElement("div");
+      row.className = "art-row pool-row pick-" + a.pick;
+
+      const btn = document.createElement("button");
+      btn.className = "pick-toggle";
+      btn.textContent = a.pick === "keep" ? "✓" : a.pick === "skip" ? "✕" : "·";
+      btn.title = "click to keep / skip / undecide";
+      btn.onclick = () => {
+        const next = a.pick === "keep" ? "skip" : a.pick === "skip" ? "undecided" : "keep";
+        pickArticles([a.id], next);
+      };
+
+      const score = document.createElement("span");
+      score.className = "art-score";
+      score.textContent = a.prefilter_score;
+
+      const main = document.createElement("div");
+      main.className = "art-main";
+      const t = document.createElement("div");
+      t.className = "art-title";
+      t.textContent = a.title;
+      const m = document.createElement("div");
+      m.className = "art-meta";
+      m.textContent = a.source;
+      main.append(t, m);
+
+      row.append(btn, score, main);
+      card.appendChild(row);
+    }
+    root.appendChild(card);
+  }
+}
+
+async function pickArticles(ids, pick, { fromStack = false } = {}) {
+  if (!currentPool) return;
+  try {
+    const res = await api(`/api/pools/${currentPool.id}/picks`, {
+      method: "PUT",
+      body: JSON.stringify({ ids, pick }),
+    });
+    currentPool = res.pool;
+    if (!fromStack) {
+      // A list edit can change what is undecided, so rebuild the queue but
+      // keep the card currently on top if it is still undecided.
+      const head = poolQueue[0];
+      poolQueue = currentPool.articles
+        .filter((a) => a.pick === "undecided")
+        .map((a) => a.id);
+      if (head && poolQueue.includes(head)) {
+        poolQueue = [head, ...poolQueue.filter((i) => i !== head)];
+      }
+    }
+    renderPool();
+    setStatus($("#pool-status"), "", true);
+  } catch (e) {
+    setStatus($("#pool-status"), e.message, false);
+  }
+}
+
+function commitTop(pick) {
+  const id = poolQueue[0];
+  if (!id) return;
+  poolHistory.push({ id, pick });
+  poolQueue = poolQueue.slice(1);
+  pickArticles([id], pick, { fromStack: true });
+}
+
+function undoPick() {
+  const last = poolHistory.pop();
+  if (!last) {
+    setStatus($("#pool-status"), "Nothing to undo.", false);
+    return;
+  }
+  poolQueue = [last.id, ...poolQueue];
+  pickArticles([last.id], "undecided", { fromStack: true });
+}
+
+// Drag and swipe. Pointer events cover mouse, trackpad and touch in one path.
+function wireSwipe() {
+  const el = $("#pool-card");
+  if (!el) return;
+  let startX = null;
+  let dx = 0;
+  const THRESHOLD = 90;
+
+  el.addEventListener("pointerdown", (e) => {
+    if (e.target.tagName === "A") return;   // let links be links
+    startX = e.clientX;
+    dx = 0;
+    el.setPointerCapture?.(e.pointerId);
+    el.classList.add("dragging");
+  });
+  el.addEventListener("pointermove", (e) => {
+    if (startX === null) return;
+    dx = e.clientX - startX;
+    el.style.transform = `translateX(${dx}px) rotate(${dx / 40}deg)`;
+    el.style.opacity = String(Math.max(0.35, 1 - Math.abs(dx) / 420));
+  });
+  const release = () => {
+    if (startX === null) return;
+    el.classList.remove("dragging");
+    const moved = dx;
+    startX = null;
+    dx = 0;
+    if (Math.abs(moved) >= THRESHOLD) {
+      commitTop(moved > 0 ? "keep" : "skip");
+    } else {
+      el.style.transform = "";
+      el.style.opacity = "";
+    }
+  };
+  el.addEventListener("pointerup", release);
+  el.addEventListener("pointercancel", release);
+  el.addEventListener("pointerleave", release);
+}
+
+document.addEventListener("keydown", (e) => {
+  if (!$("#panel-pool")?.classList.contains("active")) return;
+  if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+  if (e.key === "ArrowRight") { e.preventDefault(); commitTop("keep"); }
+  if (e.key === "ArrowLeft") { e.preventDefault(); commitTop("skip"); }
+  if (e.key.toLowerCase() === "z") { e.preventDefault(); undoPick(); }
+});
+
+$("#pool-keep").onclick = () => commitTop("keep");
+$("#pool-skip").onclick = () => commitTop("skip");
+$("#pool-undo").onclick = () => undoPick();
+$("#pool-picker").onchange = (e) => loadPool(e.target.value);
+
+$("#pool-refresh").onclick = async () => {
+  const status = $("#pool-status");
+  const btn = $("#pool-refresh");
+  btn.disabled = true;
+  try {
+    setStatus(status, "Fetching and screening… this takes about a minute.", true);
+    const res = await api("/api/pools/refresh", { method: "POST" });
+    await loadPoolList(res.pool.id);
+    setStatus(status, `New pool #${res.pool.id} — ${res.pool.stored} candidates.`, true);
+  } catch (e) {
+    setStatus(status, e.message, false);
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+$("#pool-build").onclick = async () => {
+  if (!currentPool) return;
+  const status = $("#pool-status");
+  if (!currentPool.kept) {
+    setStatus(status, "Keep at least one article first.", false);
+    return;
+  }
+  const btn = $("#pool-build");
+  btn.disabled = true;
+  try {
+    setStatus(status, `Summarising ${currentPool.kept} picks…`, true);
+    const res = await api(`/api/pools/${currentPool.id}/build`, {
+      method: "POST",
+      body: JSON.stringify({ deliver: true }),
+    });
+    setStatus(status, `Built ${res.epub_name} as issue #${res.issue_id}.`, true);
+    await loadPoolList(currentPool.id);
+  } catch (e) {
+    setStatus(status, e.message, false);
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+wireSwipe();

@@ -67,7 +67,9 @@ The field reports **"Write token accepted"** or **"Token rejected"** as soon as 
 Then build a book:
 
 ```bash
-./run.sh digest --all                        # all enabled feeds
+./run.sh pool                                # screen candidates to pick from
+./run.sh build                               # publish what you kept
+./run.sh digest --all                        # or do it all unattended
 ./run.sh digest --all --no-kindle --no-books # EPUB only
 ./run.sh                                     # interactive source pick
 ```
@@ -194,6 +196,33 @@ Two things worth knowing before trying to reason about this yourself:
 
 If usage is still too high, `ai_backend=ollama` removes it entirely. On Apple silicon with 24 GB, `qwen2.5:14b` is a better choice than the repo's default `llama3:8b` — it follows JSON instructions more reliably, which is all this pipeline asks of a model.
 
+### Picking the day's stories yourself
+
+The expensive half of a run is downloading article bodies and summarising them, and that used to happen to everything the title screen kept — eighty articles to publish twenty-five. Putting the decision between those two phases is both cheaper and more controllable: **only what you keep gets fetched and summarised.**
+
+So a run splits in two.
+
+```bash
+./run.sh pool      # fetch, dedupe, screen → a pool of candidates. 2 AI calls.
+./run.sh build     # summarise what you kept → EPUB → Books
+```
+
+`pool` downloads no articles and writes no book. `build` only touches what you picked. On a 47-feed setup that measured **2 calls / $0.05** for the pool and **1 call / $0.02** for a six-article build — against $0.157 for the fully automatic run.
+
+The **Pool** tab is the picking interface. One card at a time, showing section, source, screen score, headline and the feed's preview text:
+
+- **Swipe or drag** the card — right keeps, left skips. Works with a mouse, a trackpad or a finger.
+- **← / → / Z** on a keyboard: skip, keep, undo.
+- *Everything else in this pool* expands the full list, grouped by section, so you can see what you passed on and pull something back at any point before building.
+- **Build issue** summarises your keepers and publishes. **New pool** re-screens from scratch.
+
+Because you have already curated, a pooled build does **not** apply `min_keep_score` or `max_articles_per_issue` — your picks are the issue. Sections are still ordered by score, and the result is recorded in the Issue tab like any other.
+
+> [!IMPORTANT]
+> `--pool` publishes nothing. The daily LaunchAgent now builds a pool and stops, so an unattended morning costs two AI calls and produces no book until you pick. If you would rather it publish on its own, run `--all` instead, which is the original behaviour and still fully supported.
+
+The dashboard stays bound to `127.0.0.1`. To pick from a tablet, reach it over Tailscale or an SSH tunnel rather than exposing the port — `GET` reads need no token, so the bind is the only thing keeping settings off your network.
+
 ### Reviewing what a run picked
 
 A run's article list only ever lived in memory, so once the EPUB was written there was no record of what had been chosen and no way to drop a story without regenerating the digest and paying for the AI again.
@@ -304,6 +333,7 @@ Dashboard: `python dashboard.py` → http://127.0.0.1:8765
 | --- | --- |
 | Settings | AI, language, delivery, integrations |
 | Sources | Categories and feeds |
+| Pool | Swipe screened headlines; build an issue from your picks |
 | Issue | What the last runs picked; drop stories and rebuild |
 | Preview | Live headlines (five at first, then show more) |
 | Kindle | Delivery status |

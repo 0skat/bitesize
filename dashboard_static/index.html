@@ -22,6 +22,7 @@
   <nav class="tabs">
     <button class="tab active" data-tab="settings">Settings</button>
     <button class="tab" data-tab="sources">Sources</button>
+    <button class="tab" data-tab="pool">Pool</button>
     <button class="tab" data-tab="issue">Issue</button>
     <button class="tab" data-tab="preview">Preview</button>
     <button class="tab" data-tab="kindle">Kindle</button>
@@ -41,6 +42,32 @@
       </div>
       <div id="sources-list"></div>
       <p id="sources-status" class="status"></p>
+    </section>
+
+    <section id="panel-pool" class="panel">
+      <p class="preview-intro">Screened headlines waiting for a decision. Keep what you want to read; only your keepers get fetched and summarised, so picking fewer costs less. Nothing is published until you build.</p>
+      <div class="toolbar">
+        <select id="pool-picker"></select>
+        <button id="pool-refresh">New pool</button>
+        <button id="pool-build" class="primary">Build issue</button>
+      </div>
+      <p id="pool-tally" class="issue-meta"></p>
+      <p id="pool-status" class="status"></p>
+
+      <div id="pool-stack" class="stack">
+        <div id="pool-card" class="swipe-card"></div>
+        <div class="stack-actions">
+          <button id="pool-skip" class="skip-btn">✕ Skip</button>
+          <button id="pool-undo">Undo</button>
+          <button id="pool-keep" class="keep-btn">Keep ✓</button>
+        </div>
+        <p class="stack-hint">Swipe or drag the card · ← skip · → keep · Z undo</p>
+      </div>
+
+      <details id="pool-browse">
+        <summary>Everything else in this pool</summary>
+        <div id="pool-list"></div>
+      </details>
     </section>
 
     <section id="panel-issue" class="panel">

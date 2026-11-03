@@ -35,6 +35,7 @@ cat > "${PLIST}" <<EOF
     <string>${VENV_PY}</string>
     <string>${ROOT}/main.py</string>
     <string>--all</string>
+    <string>--pool</string>
   </array>
   <key>WorkingDirectory</key>
   <string>${ROOT}</string>
@@ -57,8 +58,10 @@ launchctl unload "${PLIST}" 2>/dev/null || true
 launchctl load -w "${PLIST}"
 
 echo "Installed ${PLIST}"
-echo "  Runs daily at 6:50 AM: caffeinate -i ${VENV_PY} ${ROOT}/main.py --all"
-echo "  Delivers EPUB to Kindle (if configured) and copies to iCloud Books for iPhone sync"
+echo "  Runs daily at 6:50 AM: caffeinate -i ${VENV_PY} ${ROOT}/main.py --all --pool"
+echo "  Builds a candidate pool only - two AI calls, no article downloads."
+echo "  Pick through it in the dashboard's Pool tab, then press Build to publish."
+echo "  Nothing is summarised or delivered until you do."
 echo "  Logs: ${ROOT}/output/logs/digest-stdout.log (and digest-stderr.log)"
 echo "  Uninstall: launchctl unload \"${PLIST}\" && rm \"${PLIST}\""
 echo

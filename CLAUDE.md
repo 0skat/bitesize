@@ -37,7 +37,15 @@ Daily run: `scripts/install-daily-launchd.sh` → `main.py --all` at 06:50. Logs
 
 ## Pipeline
 
-`main.py` is the only orchestrator:
+`main.py` is the only orchestrator, and it runs in one of three modes:
+
+- `--all` — the whole pipeline unattended (upstream behaviour).
+- `--pool` — phase one only: `fetch_and_screen` → `pool.record_pool`. No downloads, no book.
+- `--build` — phase two: `pool.picked_articles` → `fetch_bodies` → `process_articles` → `assemble_and_deliver`. A pooled build deliberately skips `_apply_interest_filter`; the human already curated.
+
+The three phases are `fetch_and_screen`, `fetch_bodies` and `assemble_and_deliver`, shared by all modes. The daily LaunchAgent runs `--pool`, so nothing publishes until someone picks.
+
+Full pipeline:
 
 RSS (parallel) → dedupe → title screen → full text + paywall mirrors → AI filter/summarize/score → keep-list → section + global covers → EPUB → recorded to `issues` → Kindle SMTP → iCloud Books.
 
