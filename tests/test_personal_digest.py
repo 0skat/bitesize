@@ -233,8 +233,10 @@ def test_summary_rule_source_keeps_the_article_language(isolated_store, monkeypa
     _reload(monkeypatch)
 
     rule = ai_summary_language_rule()
-    assert "SAME language" in rule
-    assert "do not translate" in rule
+    assert "(language: xx)" in rule
+    assert "Never translate" in rule
+    # An article the detector could not classify must still be covered.
+    assert "untagged" in rule
 
 
 def test_summary_rule_can_pin_a_language(isolated_store, monkeypatch):
@@ -1027,3 +1029,103 @@ def test_every_bool_setting_is_a_checkbox_in_the_dashboard():
     listed = set(re.findall(r'"([^"]+)"', block))
     bools = {k for k, (_g, t, _d) in store.SETTINGS_DEFAULTS.items() if t == "bool"}
     assert bools <= listed, bools - listed
+
+
+# ── Per-article language tagging ────────────────────────────────────────────
+
+
+def test_detect_language_identifies_the_three_languages_in_play():
+    from ai_locale import detect_language
+
+    assert detect_language(
+        "Scientists say a forgotten particle may explain why the universe exists"
+    ) == "en"
+    assert detect_language(
+        "El aumento de la temperatura del mar cambia la fauna de nuestras costas"
+    ) == "es"
+    assert detect_language(
+        "O aumento da temperatura do mar muda a fauna das nossas costas segundo um estudo"
+    ) == "pt"
+
+
+def test_detect_language_stays_quiet_when_unsure():
+    """Guessing would assert something false into the prompt."""
+    from ai_locale import detect_language
+
+    assert detect_language("Liverpool") == ""
+    assert detect_language("") == ""
+    assert detect_language("Ngumoha 3-0 Villarreal") == ""
+
+
+def test_detect_language_combines_its_inputs():
+    from ai_locale import detect_language
+
+    assert detect_language("Liverpool", "The match was won by the home side in the end") == "en"
+
+
+def test_batch_prompt_tags_languages_in_source_mode(isolated_store, monkeypatch):
+    store.init_db()
+    store.set_setting("summary_language", "source")
+    _reload(monkeypatch)
+
+    import gemini
+
+    seen = {}
+    monkeypatch.setattr(gemini, "_ai_available", lambda: True)
+    monkeypatch.setattr(
+        gemini, "_call_ai",
+        lambda instruction, block, label="": seen.update(block=block) or None)
+
+    gemini.process_articles([
+        {"title": "Scientists say a forgotten particle may explain the universe",
+         "content": "The researchers said that the particle has been forgotten for decades and this is why it matters.",
+         "url": "u1", "source": "s", "category": "Science"},
+        {"title": "El aumento de la temperatura del mar cambia la fauna",
+         "content": "Los investigadores han dicho que el aumento de la temperatura del mar en las costas es por el clima.",
+         "url": "u2", "source": "s", "category": "Español"},
+    ], batch_size=10)
+
+    assert "(language: en)" in seen["block"]
+    assert "(language: es)" in seen["block"]
+
+
+def test_batch_prompt_does_not_tag_when_a_language_is_pinned(isolated_store, monkeypatch):
+    """Tags only make sense in source mode; a pinned language needs none."""
+    store.init_db()
+    store.set_setting("summary_language", "es")
+    _reload(monkeypatch)
+
+    import gemini
+
+    seen = {}
+    monkeypatch.setattr(gemini, "_ai_available", lambda: True)
+    monkeypatch.setattr(
+        gemini, "_call_ai",
+        lambda instruction, block, label="": seen.update(block=block) or None)
+
+    gemini.process_articles([
+        {"title": "Scientists say a forgotten particle may explain the universe",
+         "content": "The researchers said that the particle has been forgotten for decades and this is why.",
+         "url": "u1", "source": "s", "category": "Science"},
+    ], batch_size=10)
+
+    assert "(language:" not in seen["block"]
+
+
+def test_detect_language_declines_to_split_spanish_from_portuguese():
+    """A narrow lead between two Romance languages is not evidence.
+
+    Both strings below are built from function words the two share, or lead by
+    a single word, which is exactly the case the margin rule exists to refuse.
+    """
+    from ai_locale import detect_language
+
+    assert detect_language("de que como sobre entre por para no se ja mas") == ""
+    assert detect_language("para de que como sobre entre por no se") == ""
+
+
+def test_detect_language_separates_english_on_a_bare_lead():
+    """English shares little with the Romance pair, so one word is enough."""
+    from ai_locale import detect_language
+
+    assert detect_language("Scientists say the particle may explain it all now") == "en"

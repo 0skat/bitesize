@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 
 from config import get_settings
@@ -214,6 +215,64 @@ def ai_output_language_rule() -> str:
     )
 
 
+# Stopword fingerprints for the languages this digest actually mixes. Counting
+# function words is crude but very reliable on a headline plus a paragraph, and
+# it avoids adding a dependency for one job.
+_LANG_STOPWORDS: dict[str, frozenset[str]] = {
+    "en": frozenset(
+        "the a an of and to in for with that from has have will was were said "
+        "after says on at by as is are be been it its this these those but not "
+        "they their he she we you his her who which when".split()
+    ),
+    "es": frozenset(
+        "el la los las un una unos unas de del y a en para con que como más "
+        "según también sobre desde entre porque durante tras ante por su sus "
+        "este esta estos estas pero no se ya fue son ser está están lo al".split()
+    ),
+    "pt": frozenset(
+        "o a os as um uma de do da dos das e em para com que como mais segundo "
+        "também sobre desde entre porque durante após ante por seu sua seus "
+        "suas este esta estes estas mas não se já foi são ser está estão ao".split()
+    ),
+}
+
+_WORD_RE = re.compile(r"[^\W\d_]+", re.UNICODE)
+
+
+def detect_language(*texts: str) -> str:
+    """Best guess of 'en', 'es' or 'pt' for the given text, or '' if unclear.
+
+    Returns '' rather than a coin flip when the signal is weak, so callers can
+    fall back instead of asserting something wrong into a prompt.
+    """
+    words = []
+    for text in texts:
+        if text:
+            words.extend(w.lower() for w in _WORD_RE.findall(text))
+    if len(words) < 8:
+        return ""
+
+    counts = {
+        code: sum(1 for w in words if w in stops)
+        for code, stops in _LANG_STOPWORDS.items()
+    }
+    best = max(counts, key=lambda c: counts[c])
+    if counts[best] == 0:
+        return ""
+
+    runner_up = max((c for c in counts if c != best), key=lambda c: counts[c])
+    margin = counts[best] - counts[runner_up]
+
+    # Spanish and Portuguese share a lot of function words, so a one-word lead
+    # between them means nothing — stay quiet rather than guess. English is
+    # easily separable from both, so a bare lead is enough there.
+    romance = {"es", "pt"}
+    needed = 2 if best in romance and runner_up in romance else 1
+    if margin < needed:
+        return ""
+    return best
+
+
 def summary_language_code() -> str:
     """Configured summary language: a code, or "source" to mirror the article."""
     return (get_settings().summary_language or "").strip()
@@ -230,10 +289,16 @@ def ai_summary_language_rule() -> str:
     if not code:
         return ai_output_language_rule()
     if code == "source":
+        # Asking the model to infer each article's language from its own body
+        # was not enough: in a batch mixing Spanish and English sources the
+        # output bled between neighbours, roughly one article in six. The
+        # caller now tags each article, and this rule leans on those tags.
         return (
-            " Language: write each summary in the SAME language as that "
-            "article's own title and body — do not translate between "
-            "articles. Keep JSON keys in English."
+            " Language: most articles are tagged '(language: xx)'. Write that "
+            "article's summary in exactly that language. Never translate, and "
+            "never let one article's language affect another's. For an "
+            "untagged article, match its own title and body. Keep JSON keys "
+            "in English."
         )
     name = LANGUAGE_LABELS.get(code, code)
     return (

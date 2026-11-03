@@ -2,7 +2,12 @@ import json
 import re
 from typing import Optional
 
-from ai_locale import ai_output_language_rule, ai_summary_language_rule
+from ai_locale import (
+    ai_output_language_rule,
+    ai_summary_language_rule,
+    detect_language,
+    summary_language_code,
+)
 from config import console, get_settings
 from ai import call as _call_ai, available as _ai_available
 from tags import TEMAS, normalize_tags
@@ -416,12 +421,22 @@ def process_articles(articles: list[dict], batch_size: int | None = None) -> lis
         batch = articles[i : i + batch_size]
         batch_results: list[dict] = []
 
+        # In "source" mode each article's language is stated explicitly.
+        # Without it, a mixed-language batch leaks one article's language into
+        # its neighbours' summaries.
+        tag_language = summary_language_code() == "source"
+
         article_block = ""
         for j, art in enumerate(batch):
             preview = (
                 _truncate_text(art["content"]) if art["content"] else art["title"]
             )
-            article_block += f'[{j}] "{art["title"]}"\n{preview}\n\n'
+            tag = ""
+            if tag_language:
+                code = detect_language(art.get("title", ""), preview)
+                if code:
+                    tag = f" (language: {code})"
+            article_block += f'[{j}]{tag} "{art["title"]}"\n{preview}\n\n'
 
         temas_list = ", ".join(sorted(TEMAS))
         instruction = (
