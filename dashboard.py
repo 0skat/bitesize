@@ -47,10 +47,17 @@ def _require_auth():
     return None
 
 
+# GET /api/auth/check is the one read that must still prove the token, so the
+# UI can tell you the token is wrong before you click something destructive.
+_AUTHENTICATED_READS = frozenset({"/api/auth/check"})
+
+
 @app.before_request
 def check_auth():
     if request.method == "OPTIONS" or request.path == "/api/health":
         return None
+    if request.path in _AUTHENTICATED_READS:
+        return _require_auth()
     if request.path.startswith("/api/") and request.method != "GET":
         return _require_auth()
     return None
@@ -63,6 +70,12 @@ def index():
 
 @app.get("/api/health")
 def health():
+    return jsonify({"ok": True})
+
+
+@app.get("/api/auth/check")
+def auth_check():
+    """Reached only with a valid token; check_auth rejects otherwise."""
     return jsonify({"ok": True})
 
 

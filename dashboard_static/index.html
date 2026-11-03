@@ -12,7 +12,10 @@
     <p class="subtitle">Settings dashboard — changes apply to the CLI immediately</p>
     <div class="field token-field">
       <label for="dashboard-token">Write API token</label>
-      <input id="dashboard-token" type="password" placeholder="Bearer token (if configured)">
+      <input id="dashboard-token" type="text" autocomplete="off" spellcheck="false"
+             autocapitalize="off" name="bitesize-write-token"
+             placeholder="paste from data/dashboard.token">
+      <p id="token-status" class="status"></p>
     </div>
   </header>
 

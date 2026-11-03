@@ -53,7 +53,16 @@ cp .env.example .env
 python dashboard.py          # http://127.0.0.1:8765
 ```
 
-Open the dashboard, add feeds, pick an AI backend, and paste the write-API token from `data/dashboard.token` (created on first run if `DASHBOARD_TOKEN` is unset). GET reads stay open on localhost; saves and **Run digest** need the token.
+Open the dashboard, add feeds, pick an AI backend, and paste the write-API token from `data/dashboard.token` (created on first run if `DASHBOARD_TOKEN` is unset):
+
+```bash
+cat data/dashboard.token
+```
+
+The field reports **"Write token accepted"** or **"Token rejected"** as soon as you paste, so a stale or mistyped token is obvious before you click something destructive. GET reads stay open on localhost; every save, delete and rebuild needs the token, and without it they fail with 401.
+
+> [!TIP]
+> The field is deliberately a plain text input, not a password one — browsers autofill saved passwords into password fields on `localhost`, which silently replaces the token with something that looks right and 401s on every write.
 
 Then build a book:
 

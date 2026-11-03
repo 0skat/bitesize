@@ -588,6 +588,32 @@ loadSettings().then(refreshSources).catch((e) => {
   setStatus($("#settings-status"), e.message, false);
 });
 
+// A stale token in localStorage, or one a password manager autofilled over,
+// used to fail only at the moment of a write — and a DELETE that 401s looks
+// like a broken API rather than a bad token. Check it up front instead.
+async function verifyToken() {
+  const status = $("#token-status");
+  if (!status) return;
+  if (!dashboardToken()) {
+    setStatus(status, "No write token — reads work, changes will be refused.", false);
+    return;
+  }
+  try {
+    const r = await fetch("/api/auth/check", { headers: authHeaders() });
+    if (r.ok) {
+      setStatus(status, "Write token accepted.", true);
+    } else {
+      setStatus(
+        status,
+        "Token rejected. Paste the current value from data/dashboard.token.",
+        false,
+      );
+    }
+  } catch (e) {
+    setStatus(status, `Could not reach the dashboard API: ${e.message}`, false);
+  }
+}
+
 const tokenInput = $("#dashboard-token");
 if (tokenInput) {
   const saved = localStorage.getItem(TOKEN_KEY);
@@ -596,7 +622,13 @@ if (tokenInput) {
     const v = tokenInput.value.trim();
     if (v) localStorage.setItem(TOKEN_KEY, v);
     else localStorage.removeItem(TOKEN_KEY);
+    verifyToken();
   });
+  tokenInput.addEventListener("input", () => {
+    const v = tokenInput.value.trim();
+    if (v) localStorage.setItem(TOKEN_KEY, v);
+  });
+  verifyToken();
 }
 
 $("#issue-picker").onchange = (e) => loadIssue(e.target.value);
