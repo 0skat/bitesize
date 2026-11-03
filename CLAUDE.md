@@ -33,7 +33,10 @@ python main.py --all --no-kindle --no-books
 
 Write APIs on the dashboard need `Authorization: Bearer <token>`. Token is `DASHBOARD_TOKEN` or `data/dashboard.token` (auto-created). The UI field stores it in localStorage.
 
-Daily run: `scripts/install-daily-launchd.sh` → `main.py --all` at 06:50. Logs: `output/logs/digest-stdout.log`.
+Two LaunchAgents, both installed by scripts and both optional:
+
+- `scripts/install-daily-launchd.sh` → `com.bitesize.digest`, `caffeinate -i main.py --all --pool` at 06:50. Logs `output/logs/digest-stdout.log`.
+- `scripts/install-dashboard-launchd.sh` → `com.bitesize.dashboard`, `dashboard.py` with `RunAtLoad` and `KeepAlive`. Logs `output/logs/dashboard-stdout.log`. A tunnel proxies to loopback, so the remote URL is dead whenever this is not listening. Never leave a hand-started dashboard and the agent both wanting port 8765.
 
 ## Pipeline
 

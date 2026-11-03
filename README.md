@@ -349,12 +349,37 @@ Off by default. Put a TypeSafe key or a Vercel AI Gateway `vck_…` key in `.env
 ./scripts/install-daily-launchd.sh
 ```
 
-Runs `.venv/bin/python main.py --all` at **06:50** local time. Logs: `output/logs/digest-stdout.log`. Uninstall:
+Runs `caffeinate -i .venv/bin/python main.py --all --pool` at **06:50** local
+time, so the morning builds a candidate pool and publishes nothing until you
+pick. `caffeinate` holds off idle sleep for the length of the run; waking a
+sleeping Mac is a separate `pmset` job the script prints. Logs:
+`output/logs/digest-stdout.log`. Uninstall:
 
 ```bash
 launchctl unload ~/Library/LaunchAgents/com.bitesize.digest.plist
 rm ~/Library/LaunchAgents/com.bitesize.digest.plist
 ```
+
+## Keeping the dashboard up (macOS)
+
+```bash
+./scripts/install-dashboard-launchd.sh
+```
+
+Starts the dashboard at login and restarts it whenever it exits. This is what
+makes a tunnel usable: `tailscale serve` only proxies to `127.0.0.1:8765`, so a
+dashboard started by hand takes the remote URL down with its terminal. The
+installer stops any dashboard already running first, because a second listener
+on the port would crash-loop under `KeepAlive`. Logs:
+`output/logs/dashboard-stdout.log`. Uninstall:
+
+```bash
+launchctl unload ~/Library/LaunchAgents/com.bitesize.dashboard.plist
+rm ~/Library/LaunchAgents/com.bitesize.dashboard.plist
+```
+
+With the agent loaded, do not also run `./run.sh dashboard` — `launchctl
+unload` first if you want the terminal copy.
 
 ## Configuration
 
