@@ -123,3 +123,31 @@ def test_token_field_is_not_a_password_input():
     field = html[html.index('id="dashboard-token"') - 40 :][:400]
     assert 'type="text"' in field
     assert 'autocomplete="off"' in field
+
+
+def test_the_hidden_attribute_beats_the_stylesheet():
+    """`gate.hidden = true` must actually hide the login overlay.
+
+    `.gate` sets `display: grid`, and an author rule outranks the UA
+    stylesheet's `[hidden] { display: none }`. Without an explicit override
+    the gate stayed pinned over the dashboard after a successful login and
+    ate every click, which read as a broken login rather than broken CSS.
+    The same applied to `.token-field`, which inherits `display: grid` from
+    `.field`.
+    """
+    import pathlib
+    import re
+
+    static = pathlib.Path(__file__).parent.parent / "dashboard_static"
+    css = (static / "style.css").read_text(encoding="utf-8")
+    # Comments quote the very selector under test, so drop them first.
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
+    js = (static / "app.js").read_text(encoding="utf-8")
+
+    rule = re.search(r"\[hidden\]\s*\{([^}]*)\}", css)
+    assert rule, "no [hidden] rule: JS toggles would be overridden"
+    body = rule.group(1)
+    assert "display" in body and "none" in body and "!important" in body, body
+
+    # And the JS must still be toggling the attribute, not a class.
+    assert ".hidden =" in js
