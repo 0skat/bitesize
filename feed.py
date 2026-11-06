@@ -1,5 +1,6 @@
 import html
 import re
+import time
 from datetime import datetime
 
 import certifi
@@ -128,6 +129,40 @@ def dedupe_articles(articles: list[dict]) -> tuple[list[dict], list[dict]]:
             seen_titles.add(key)
         kept.append(art)
 
+    return kept, dropped
+
+
+def filter_by_age(
+    articles: list[dict],
+    max_age_days: int,
+    *,
+    now: float | None = None,
+) -> tuple[list[dict], list[dict]]:
+    """Split articles into recent-enough vs too old. 0 days disables the check.
+
+    Feeds serve far more than the last day. Modern Farmer's feed carries
+    evergreen and seasonal posts — "April Seed Starting" was still being
+    offered in November — and the Substacks under Opinion hold roughly twenty
+    back issues, so without an age bound every one of them is a candidate
+    every morning. Dropping them here, before the title screen, also saves the
+    tokens spent screening them.
+
+    An article whose feed gave no date (`published_ts` 0) is kept. Several
+    feeds publish no dates at all, and treating unknown as ancient would
+    silently delete those sources entirely.
+    """
+    if max_age_days <= 0:
+        return list(articles), []
+
+    # Whole seconds on both sides: published_ts is an int, so comparing it
+    # against a float cutoff makes an article exactly on the boundary fall
+    # one side or the other depending on the sub-second remainder.
+    cutoff = int(time.time() if now is None else now) - max_age_days * 86400
+    kept: list[dict] = []
+    dropped: list[dict] = []
+    for art in articles:
+        ts = art.get("published_ts") or 0
+        (kept if not ts or ts >= cutoff else dropped).append(art)
     return kept, dropped
 
 

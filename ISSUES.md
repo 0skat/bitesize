@@ -2,6 +2,23 @@
 
 Open problems seen in the running app. There is no GitHub issue tracker yet. Close an item here when it is no longer true.
 
+## The same stories were offered every morning — fixed
+
+**Expected:** a new pool is a new set of candidates.
+**Actual:** measured over seven pools (2–6 November 2026), nine URLs appeared in **all seven** — six consecutive Import AI issues and `modernfarmer.com/2026/04/sheep-regeneration/`, an April article still scoring in the seventies in November. Reuse by section: Opinion 3.39×, Agriculture 2.41×, every other section about 1.1–1.3×.
+
+Three compounding causes:
+
+1. `feed.dedupe_articles` kept `seen_urls` as a local, so it deduped **within** a run only. Anything still in a feed was a fresh candidate the next day.
+2. `feed.fetch_feed` computed `published_ts` and then stored `published = dt.strftime("%H:%M")`. Every date in the pool was time-of-day, so nothing downstream could judge an article's age.
+3. `prefilter_min_per_section = 4` demanded four Agriculture slots a day from two feeds that serve twelve articles, six of them over three months old.
+
+**Fixed** by `feed.filter_by_age` (`max_article_age_days`, unknown dates kept) and `seen.py` (`seen_memory_days`), both applied before the title screen so they also save screening tokens. A measured 3-day window takes Agriculture 12→ 6 and Opinion 48→ 23 and costs every other section at most one article. `seen.py` is a table of its own rather than a query over `pool_articles`, because pools are pruned and reading history from rows that get deleted would resurrect old stories on the next prune.
+
+Both default to 0, which is upstream behaviour. A story suppressed by mistake comes back with `seen.forget(url)`.
+
+**Still open:** small sections are now thinner by design. Agriculture has six fresh articles on a good day, which is below its own floor — see the Brave Search source in [ROADMAP.md](ROADMAP.md).
+
 ## Antigravity flakes during the daily run
 
 **Expected:** Filter, summaries, and covers come back from `agy`.  

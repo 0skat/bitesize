@@ -74,6 +74,27 @@ SETTINGS_DEFAULTS: dict[str, tuple[str, str, Any]] = {
     # min_section_stories can only rescue stories that survive the screen, so
     # without this a small section can be gone before the keep-list ever runs.
     "prefilter_min_per_section": ("filter", "int", 0),
+    # Drop articles older than this before the title screen. Feeds serve
+    # evergreen and back-issue items, which is why the same stories kept
+    # reappearing every morning. 0 disables the check; a feed that gives no
+    # date is always kept.
+    "max_article_age_days": ("filter", "int", 0),
+    # Never offer a URL that has already been in a pool, for this many days.
+    # 0 disables the memory (upstream behaviour: a story can recur daily for
+    # as long as its feed carries it).
+    "seen_memory_days": ("filter", "int", 0),
+    # Brave Search as an article source. Costs money per call, so it does
+    # nothing until brave_enabled is on and a key is set. "primary" uses
+    # Brave alone, "supplement" adds it to the RSS sources.
+    "brave_enabled": ("brave", "bool", False),
+    "brave_api_key": ("brave", "str", ""),
+    "brave_mode": ("brave", "str", "supplement"),
+    # One "Section = query" per line; `site:` pins a publisher with no feed.
+    "brave_queries": ("brave", "str", ""),
+    "brave_count": ("brave", "int", 20),
+    "brave_freshness": ("brave", "str", "pd"),
+    "brave_country": ("brave", "str", "us"),
+    "brave_search_lang": ("brave", "str", "en"),
     "index_entries_per_page": ("epub", "int", 10),
     "top_picks_on_cover": ("epub", "int", 6),
     # Keep only the newest N EPUBs in output/. 0 keeps every issue forever.
@@ -135,6 +156,16 @@ class Settings:
     overflow_section_max: int = 0
     prefilter_keep: int = 0
     prefilter_min_per_section: int = 0
+    max_article_age_days: int = 0
+    seen_memory_days: int = 0
+    brave_enabled: bool = False
+    brave_api_key: str = ""
+    brave_mode: str = "supplement"
+    brave_queries: str = ""
+    brave_count: int = 20
+    brave_freshness: str = "pd"
+    brave_country: str = "us"
+    brave_search_lang: str = "en"
     index_entries_per_page: int = 10
     top_picks_on_cover: int = 6
     output_keep_issues: int = 0
@@ -306,6 +337,11 @@ _ENV_TO_SETTING = {
     "OVERFLOW_SECTION_MAX": "overflow_section_max",
     "PREFILTER_KEEP": "prefilter_keep",
     "PREFILTER_MIN_PER_SECTION": "prefilter_min_per_section",
+    "MAX_ARTICLE_AGE_DAYS": "max_article_age_days",
+    "SEEN_MEMORY_DAYS": "seen_memory_days",
+    "BRAVE_API_KEY": "brave_api_key",
+    "BRAVE_ENABLED": "brave_enabled",
+    "BRAVE_MODE": "brave_mode",
     "OUTPUT_KEEP_ISSUES": "output_keep_issues",
     "OLLAMA_HOST": "ollama_host",
     "OLLAMA_MODEL": "ollama_model",

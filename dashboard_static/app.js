@@ -8,6 +8,7 @@ const GROUP_LABELS = {
   kindle: "Kindle delivery",
   books: "iCloud Books delivery",
   dashboard: "Dashboard access",
+  brave: "Brave Search source",
 };
 
 // Booleans are detected from the value's type below. This list only covers
@@ -21,6 +22,7 @@ const BOOL_KEYS = new Set([
   "ai_covers_enabled",
   "balance_sections",
   "dashboard_cookie_secure",
+  "brave_enabled",
 ]);
 
 function isBoolSetting(key, value) {
@@ -81,7 +83,9 @@ function setStatus(el, msg, ok) {
   el.className = "status" + (msg ? (ok ? " ok" : " err") : "");
 }
 
-const TEXTAREA_KEYS = new Set(["user_interests"]);
+// Multi-line prose. A text input cannot hold a newline at all, so a
+// line-per-section setting is unusable without this.
+const TEXTAREA_KEYS = new Set(["user_interests", "brave_queries"]);
 
 function inputForKey(key, value) {
   if (TEXTAREA_KEYS.has(key)) {

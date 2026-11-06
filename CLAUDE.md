@@ -60,6 +60,10 @@ Gmail and Calendar inject extra sections when their integration flags are on. Th
 
 AI calls go through `ai.py` (`claude` / `antigravity` / `gemini` / `ollama` — note the router falls through to Gemini on any unrecognised value). Prompts live in `gemini.py` plus the Gmail/Calendar processors. If the backend is down, the digest still writes: length-based relevance, no summaries.
 
+Freshness is enforced twice before the screen, and both are off by default (0): `feed.filter_by_age` on `max_article_age_days` (a `published_ts` of 0 means unknown and is **kept** — several feeds publish no dates), and `seen.filter_seen` on `seen_memory_days`. `seen.py` owns its own table on purpose: pools are pruned, so deriving history from `pool_articles` would resurrect old stories on the next prune. Only pooled articles are recorded, in `run_pool` — a screened-out headline was never offered and may return.
+
+`brave_news.py` is an optional second source, off unless `brave_enabled` and a key (`BRAVE_API_KEY` beats the `brave_api_key` setting). `brave_mode=primary` skips the RSS fetch entirely; `supplement` merges. It returns `fetch_feed`-shaped dicts so everything downstream is unchanged, and it never raises — every failure path returns `[]` and logs, because a paid API must not abort a run. `scripts/brave-probe.py` is the read-only way to see results.
+
 Relevance has two modes, and this matters before touching scoring. With `user_interests` empty it is upstream's batch-relative newsworthiness score, with a forced spread and a listwise re-rank for clustered batches. With `user_interests` set it is an absolute per-story fit score, and both the forced spread and the listwise re-rank are deliberately disabled (`gemini._relevance_rule`, `gemini._maybe_remap_clustered_batch`) — re-enabling either would break `min_keep_score`. The keep-list and the `output/` prune live in `main.py` (`_apply_interest_filter`, `_prune_old_issues`).
 
 ## Conventions

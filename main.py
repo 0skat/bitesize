@@ -25,6 +25,7 @@ from feed import (
     dedupe_articles,
     fetch_article_content,
     fetch_feed,
+    filter_by_age,
     filter_headline_only,
 )
 from paywall import log_summary, reset_stats
@@ -40,6 +41,8 @@ from epub import generate_epub
 from books import copy_to_icloud_books
 import issues
 import pool as pool_store
+import seen
+import brave_news
 from kindle import send_to_kindle
 from gmail import get_gmail_threads
 from gmail_processor import process_email_threads, generate_inbox_cover
@@ -362,6 +365,38 @@ def fetch_bodies(articles: list[dict]) -> int:
     return fetched
 
 
+def _brave_articles(settings) -> dict[str, list[dict]]:
+    """Brave Search results per section, or {} when it is off or unkeyed.
+
+    Separate from the RSS fetch so a missing key, an exhausted quota or a 500
+    costs nothing but the feeds it would have added.
+    """
+    if not settings.brave_enabled:
+        return {}
+    queries = brave_news.parse_queries(settings.brave_queries)
+    if not queries:
+        console.print("  [yellow]⚠  Brave is on but brave_queries is empty[/yellow]")
+        return {}
+    if not brave_news.api_key(settings):
+        console.print("  [yellow]⚠  Brave is on but no API key is set[/yellow]")
+        return {}
+
+    console.print(
+        f"  [dim]Brave: {len(queries)} quer{'y' if len(queries) == 1 else 'ies'}, "
+        f"freshness={settings.brave_freshness}[/dim]"
+    )
+    found = brave_news.fetch_sections(
+        queries,
+        count=settings.brave_count,
+        freshness=settings.brave_freshness,
+        country=settings.brave_country,
+        search_lang=settings.brave_search_lang,
+    )
+    total = sum(len(v) for v in found.values())
+    console.print(f"[green]✓[/green]  Brave returned [bold]{total}[/bold] articles")
+    return found
+
+
 def fetch_and_screen(selected: dict, settings) -> list[dict]:
     """Phase one: fetch every feed, drop duplicates, screen on titles.
 
@@ -370,8 +405,11 @@ def fetch_and_screen(selected: dict, settings) -> list[dict]:
     (two AI calls, no article downloads), which is what makes it safe to run
     unattended and to hand to a human for picking.
     """
-    if not selected:
+    brave_only = settings.brave_enabled and settings.brave_mode == "primary"
+    if not selected and not brave_only:
         return []
+    if brave_only:
+        selected = {}
 
     total_feeds = sum(len(v) for v in selected.values())
     raw_sections: dict[str, list] = {cat: [] for cat in selected}
@@ -400,11 +438,34 @@ def fetch_and_screen(selected: dict, settings) -> list[dict]:
                 prog.advance(task)
 
     total_raw = sum(len(v) for v in raw_sections.values())
-    console.print(f"[green]✓[/green]  Fetched [bold]{total_raw}[/bold] raw articles")
+    if selected:
+        console.print(f"[green]✓[/green]  Fetched [bold]{total_raw}[/bold] raw articles")
+
+    for section, found in _brave_articles(settings).items():
+        raw_sections.setdefault(section, []).extend(found)
 
     flat_raw = [art for arts in raw_sections.values() for art in arts]
+    if not flat_raw:
+        return []
     flat_raw, dupes = dedupe_articles(flat_raw)
     _log_dedupe(dupes)
+
+    # Age first, then history: both are free, and screening fewer titles is
+    # cheaper than screening them and discarding the result.
+    flat_raw, stale = filter_by_age(flat_raw, settings.max_article_age_days)
+    if stale:
+        console.print(
+            f"  [dim]✗  dropped {len(stale)} older than "
+            f"{settings.max_article_age_days}d[/dim]"
+        )
+
+    if settings.seen_memory_days > 0:
+        flat_raw, already = seen.filter_seen(flat_raw, settings.seen_memory_days)
+        if already:
+            console.print(
+                f"  [dim]✗  dropped {len(already)} already offered "
+                f"in an earlier pool[/dim]"
+            )
 
     screened, screened_out = prefilter_by_title(flat_raw, settings.prefilter_keep)
     if screened_out:
@@ -424,6 +485,11 @@ def run_pool(selected: dict, settings) -> int | None:
 
     pool_id = pool_store.record_pool(candidates)
     pool_store.prune_pools(settings.output_keep_issues)
+    # Remember what was offered, not what was fetched: a headline the screen
+    # dropped was never shown to anyone and may come back tomorrow.
+    if settings.seen_memory_days > 0:
+        seen.record_seen(candidates)
+        seen.prune_seen(settings.seen_memory_days)
     by_section: Counter = Counter(a.get("category", "") for a in candidates)
     console.print(
         f"\n[bold green]✅  Pool #{pool_id}[/bold green]  "

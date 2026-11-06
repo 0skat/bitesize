@@ -265,6 +265,64 @@ Tailscale encrypts node-to-node traffic with WireGuard, so a tailnet bind is pri
 
 Passwords are stored as an scrypt hash with a per-password salt in `data/dashboard_auth.json` (mode `0600`); the plaintext is never written. `./run.sh set-password --clear` returns to the token-only model.
 
+### Why the same stories kept coming back
+
+Measured over seven pools: nine URLs appeared in **all seven**, including an April Modern Farmer article still scoring in the seventies in November. Opinion repeated at 3.39× and Agriculture at 2.41×, while every other section sat near 1.1×.
+
+Three things combined. Dedupe only ever looked inside one run, so anything still sitting in a feed was a fresh candidate the next morning. The publish date was being thrown away — `published` stored `%H:%M`, so nothing downstream could tell an hour-old story from a seven-month-old one. And `prefilter_min_per_section`, which exists so small sections do not vanish, was demanding four Agriculture slots a day from two feeds that serve twelve articles, six of them over three months old.
+
+Two settings fix it, both applied before the title screen so they also cut screening tokens:
+
+| Setting | Does | Default |
+| --- | --- | --- |
+| `max_article_age_days` | drops anything older. A feed that gives no date is always kept, since several publish none and treating unknown as ancient would delete those sources | `0` (off) |
+| `seen_memory_days` | never offers a URL that has already been in a pool, for this many days | `0` (off) |
+
+A 3-day window was measured against the live feeds: Agriculture 12→ 6, Opinion 48→ 23, every other section losing at most one article.
+
+Only what is **offered** is remembered, not what is fetched — a headline the screen dropped was never shown to anyone, so it can come back tomorrow. The record is its own table rather than a query over past pools, because pools get pruned and reading history from deleted rows would resurrect old stories. If something is suppressed that you wanted, `seen.forget(url)` returns it.
+
+> [!NOTE]
+> Stricter freshness makes small sections genuinely thinner. Agriculture has about six fresh articles on a good day, which is below its own floor — which is what the Brave source below is for.
+
+### Brave Search as a source
+
+RSS is only what a publisher chooses to syndicate, and some worth reading offer no usable feed at all — Reuters retired theirs, which is why this fork fell back to Guardian World and Deutsche Welle. Brave's news endpoint inverts both problems: results are query-driven, `freshness=pd` bounds them to the last 24 hours **at the source**, and `site:reuters.com` pins a publisher with no feed.
+
+```bash
+# .env, or brave_api_key in the dashboard
+BRAVE_API_KEY=...
+```
+
+Queries are one line per section, so a bad character cannot cost you a morning run:
+
+```
+Agriculture = agriculture farming crops livestock news
+Soccer      = Premier League Liverpool transfer news
+World       = world news site:reuters.com
+```
+
+| Setting | Does |
+| --- | --- |
+| `brave_enabled` | off until you turn it on — this one costs money per call |
+| `brave_mode` | `supplement` adds Brave to the RSS feeds; `primary` uses Brave alone |
+| `brave_queries` | the `Section = query` lines above |
+| `brave_freshness` | `pd` 24h, `pw` week, `pm` month, `py` year |
+| `brave_count` | results per query, up to Brave's maximum of 50 |
+
+See what comes back before wiring it into a run. The probe stores nothing and makes no AI calls:
+
+```bash
+./scripts/brave-probe.py                      # every configured query
+./scripts/brave-probe.py Agriculture Soccer   # just these sections
+./scripts/brave-probe.py --query "Liverpool transfer news"
+./scripts/brave-probe.py --seen               # flag what a pool already offered
+```
+
+Results join the same pipeline as RSS, so dedupe, the age filter and the title screen all apply to them — Brave is not exempt from freshness. Any failure (no key, 401, 429, a 500, a timeout) logs a warning and returns nothing, so the run falls back to its feeds instead of aborting.
+
+**Cost.** The free tier was removed in February 2026. Every plan now carries **$5 of monthly credit**, Search is **$5 per 1,000 requests**, and a card is required even for the credit. One query per section per day is roughly 300 requests a month — about $1.50, inside the credit.
+
 ### Picking the day's stories yourself
 
 The expensive half of a run is downloading article bodies and summarising them, and that used to happen to everything the title screen kept — eighty articles to publish twenty-five. Putting the decision between those two phases is both cheaper and more controllable: **only what you keep gets fetched and summarised.**
