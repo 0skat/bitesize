@@ -139,6 +139,18 @@ button.primary {
 button.primary:hover { background: var(--accent-hover); }
 button.danger { color: var(--danger); border-color: #fecaca; }
 
+/* A download link that sits in a toolbar beside buttons. */
+a.button-link {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  background: var(--card);
+  padding: 0.45rem 0.9rem;
+  border-radius: 6px;
+  color: inherit;
+  text-decoration: none;
+}
+
 .toolbar, .actions {
   display: flex;
   gap: 0.5rem;

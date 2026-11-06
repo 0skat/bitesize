@@ -38,6 +38,8 @@ Two LaunchAgents, both installed by scripts and both optional:
 - `scripts/install-daily-launchd.sh` → `com.bitesize.digest`, `caffeinate -i main.py --all --pool` at 06:50. Logs `output/logs/digest-stdout.log`.
 - `scripts/install-dashboard-launchd.sh` → `com.bitesize.dashboard`, `dashboard.py` with `RunAtLoad` and `KeepAlive`. Logs `output/logs/dashboard-stdout.log`. A tunnel proxies to loopback, so the remote URL is dead whenever this is not listening. Never leave a hand-started dashboard and the agent both wanting port 8765.
 
+On Linux (the Raspberry Pi), `scripts/install-linux-systemd.sh` installs the twins: `bitesize-dashboard.service` and `bitesize-digest.timer` (06:50, `Persistent=true`), same log paths. `scripts/move-to-pi.sh` moves an install from the Mac; `scripts/deploy-to-pi.sh` ships later code changes (tests on the Pi, rollback on failure). iCloud Books is macOS-only; there the dashboard serves EPUBs by name from `output/` (`epub_download.py`).
+
 ## Pipeline
 
 `main.py` is the only orchestrator, and it runs in one of three modes:

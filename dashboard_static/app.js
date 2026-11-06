@@ -408,6 +408,12 @@ function renderIssue(issue) {
   $("#issue-meta").textContent =
     `${issue.epub_name} — ${kept} of ${total} kept` +
     (issue.epub_exists ? "" : " (EPUB no longer on disk; rebuild recreates it)");
+
+  // On the Pi there is no iCloud Books copy: the phone downloads the file
+  // and Safari offers to open it in Books.
+  const dl = $("#download-issue");
+  dl.href = `/api/issues/${issue.id}/epub`;
+  dl.hidden = !issue.epub_exists;
 }
 
 async function loadIssue(id) {

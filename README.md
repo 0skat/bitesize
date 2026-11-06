@@ -335,6 +335,8 @@ Skip with `--no-kindle` or by turning off Kindle delivery in Settings.
 
 On by default. The EPUB is copied into the Mac Books folder so it can sync to iPhone/iPad. Skip with `--no-books`. If auto-detection fails, set `icloud_books_dir` in the dashboard.
 
+iCloud Books exists only on macOS. On a Linux host, open the dashboard's **Issue** tab on the phone and tap **Download EPUB** instead; Safari offers to open it in Books. The file is served from `output/` by name (`epub_download.py`), so it keeps working after the repo moves between machines.
+
 ### Gmail and Calendar
 
 Off by default. Enable them under Integrations, with `credentials.json` / `token.json` on the machine. The daily `--all` run honors those flags and does not prompt.
@@ -380,6 +382,28 @@ rm ~/Library/LaunchAgents/com.bitesize.dashboard.plist
 
 With the agent loaded, do not also run `./run.sh dashboard` — `launchctl
 unload` first if you want the terminal copy.
+
+## Running on a Raspberry Pi (Linux)
+
+An always-on box removes every sleep problem above: the dashboard stays reachable and the 06:50 run happens whether or not the laptop is open.
+
+From the Mac, with the Pi already on your tailnet and reachable by SSH key:
+
+```bash
+./scripts/move-to-pi.sh you@pi-home            # add --with-google to copy token.json / credentials.json
+ssh -t you@pi-home '~/.local/bin/claude'       # log the AI backend in once
+```
+
+`move-to-pi.sh` stops the Mac LaunchAgents, copies the repo with `data/`, `output/` and `.env`, rewrites stored EPUB paths for the new home, turns iCloud Books delivery off, builds `.venv`, runs the tests, and installs the systemd units with `scripts/install-linux-systemd.sh`:
+
+| Unit | Does |
+| --- | --- |
+| `bitesize-dashboard.service` | `dashboard.py` on `127.0.0.1:8765`, started at boot, restarted on exit |
+| `bitesize-digest.timer` | `main.py --all --pool` daily at 06:50 Pi time; `Persistent=true` runs a missed day at boot |
+
+Then `tailscale serve --bg --https=443 8765` publishes it (on 8444 instead if something such as Pi-hole already holds 443 on the Pi), and the script turns the Mac's 443 mapping off once the Pi answers. Logs stay in `output/logs/`. Check with `systemctl status bitesize-dashboard bitesize-digest.timer`; run the pool now with `sudo systemctl start bitesize-digest`.
+
+To ship later changes from the Mac: `scripts/deploy-to-pi.sh`. It sends the code but never `data/`, `output/`, `.env` or Google tokens, runs the test suite on the Pi, restarts `bitesize-dashboard`, and rolls back to the previous version if the tests or the health check fail. The 06:50 timer picks up the new code on its next run.
 
 ## Configuration
 

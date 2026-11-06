@@ -19,6 +19,7 @@ import settings_store as store
 from config import BASE_DIR, load_env, reload_settings
 from kindle import send_test_email
 from preview import build_source_preview
+from epub_download import bp as epub_download_bp
 
 load_env()
 
@@ -44,6 +45,7 @@ def _resolve_dashboard_token() -> str:
 DASHBOARD_TOKEN = _resolve_dashboard_token()
 
 app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="")
+app.register_blueprint(epub_download_bp)  # GET /api/issues/<id>/epub, /api/issues/latest/epub
 app.secret_key = auth.session_secret()
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,

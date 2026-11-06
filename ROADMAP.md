@@ -12,6 +12,7 @@ The morning pipeline is in daily use: RSS → full text → AI filter/summarize/
 - **Paywall mirrors** when the direct fetch is thin or fails.
 - **Gmail and Calendar sections** are wired in `main.py` and off by default. Enable them in the dashboard; the daily `--all` run will pick them up.
 - **macOS LaunchAgent** at 06:50 (`scripts/install-daily-launchd.sh`).
+- **Runs on a Raspberry Pi.** `scripts/move-to-pi.sh` moves the install from the Mac; `scripts/install-linux-systemd.sh` sets up the dashboard service and a persistent 06:50 timer. iCloud Books is macOS-only, so the Issue tab's **Download EPUB** (`/api/issues/<id>/epub`, `/api/issues/latest/epub`) replaces it on Linux. `scripts/deploy-to-pi.sh` ships later changes, with tests on the Pi and rollback on failure.
 - **pt-BR tags** on each story: `resumo` vs `artigo-completo`, plus temas from a fixed list. Heuristics run when the AI is down.
 - **Scoring:** fallback stays below 70; cover and section leads prefer AI scores over length stand-ins; clustered AI batches get one listwise re-rank.
 - **A smaller, personal morning book.** `user_interests` scores stories on fit to the reader instead of general newsworthiness, on an absolute scale; `min_keep_score` and `max_articles_per_issue` trim the issue. Setting interests disables the forced score spread and the clustered listwise re-rank, both of which assume batch-relative scoring. `output_keep_issues` prunes `output/`.

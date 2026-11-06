@@ -93,6 +93,8 @@ The AI backend itself was fine throughout — a trivial `claude -p` probe during
 
 **Still open:** waking the machine needs `sudo pmset repeat wakeorpoweron MTWRFSU 06:45:00`, which the install script prints but cannot run for you. On a desktop that never sleeps, none of this applies.
 
+**Way out (6 November 2026):** run it on an always-on Linux box instead. `scripts/move-to-pi.sh` moves the install to a Raspberry Pi, where `bitesize-digest.timer` fires at 06:50 with `Persistent=true` and nothing sleeps mid-run. Stays open for anyone still running on a laptop.
+
 ## requirements.txt did not pin the lxml.html.clean shim
 
 **Expected:** `pip install -r requirements.txt` gives a working environment.
