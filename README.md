@@ -4,13 +4,14 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/victor-salles/bitesize/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/victor-salles/bitesize/ci.yml?style=flat-square&label=CI" alt="CI"></a>
-  <img src="https://img.shields.io/badge/Python-3.13-3776ab?style=flat-square&logo=python&logoColor=white" alt="Python 3.13">
+  <img src="https://img.shields.io/badge/Python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/Kindle-EPUB-232f3e?style=flat-square" alt="Kindle EPUB">
+  <img src="https://img.shields.io/badge/fork%20of-victor--salles%2Fbitesize-6b7280?style=flat-square&logo=github&logoColor=white" alt="Fork of victor-salles/bitesize">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow?style=flat-square" alt="MIT"></a>
 </p>
 
 <p align="center">
+  <a href="#what-this-fork-changes">What this fork changes</a> &nbsp;·&nbsp;
   <a href="#features">Features</a> &nbsp;·&nbsp;
   <a href="#getting-started">Getting started</a> &nbsp;·&nbsp;
   <a href="#how-it-works">How it works</a> &nbsp;·&nbsp;
@@ -21,7 +22,25 @@
 BiteSIze runs on one machine. It fetches the feeds you pick, pulls full article text, filters and summarizes with AI, and writes a magazine-style EPUB into `output/`. Kindle email and iCloud Books are extra steps: they fire when they are configured, and they are skipped when they are not.
 
 > [!NOTE]
-> This is a **single-user local tool**. The dashboard binds to `127.0.0.1` and is not meant to be exposed. Secrets stay in `.env` and `data/` — never in git.
+> This is a **fork** of [victor-salles/bitesize](https://github.com/victor-salles/bitesize), kept additive so it still rebases on upstream. It is a single-user tool: the app always binds `127.0.0.1` and is published to other devices by a tunnel, never by opening the port. Secrets stay in `.env` and `data/` — never in git.
+
+## What this fork changes
+
+Upstream is an unattended Mac pipeline that publishes whatever it ranks highest. This fork is built around one reader picking the day's stories from a tablet, on a host that is always on.
+
+| | Upstream | Here |
+| --- | --- | --- |
+| **Relevance** | general newsworthiness, scored relative to each batch of 20 | [absolute fit to interests you describe in prose](#reading-what-you-actually-care-about), with a keep threshold, a per-issue cap and per-section floors |
+| **The run** | one pass: screen → fetch → summarize → publish | [two passes](#picking-the-days-stories-yourself) — a morning **pool** of headlines, then a build of only what you kept, so nothing is fetched or summarized until you pick |
+| **Picking** | — | swipe the pool on a phone or tablet; an **Issue** tab [prunes a published book and rebuilds it](#reviewing-what-a-run-picked) with no AI calls |
+| **Access** | loopback, bearer token for writes | [password auth](#reaching-the-dashboard-from-a-tablet) that closes reads too, published over Tailscale with HTTPS |
+| **Host** | macOS, LaunchAgent at 06:50 | macOS **or** [an always-on Linux box](#running-on-a-raspberry-pi-linux), with systemd units and a deploy script that tests on the target and rolls back |
+| **Delivery** | Kindle email, iCloud Books | same, plus **Download EPUB** from the dashboard, because iCloud Books is macOS-only |
+| **AI cost** | ~16 calls a run | [6 on a full run, 3 on a curated one](#keeping-ai-usage-down); extended thinking off, usage logged per call |
+| **Languages** | pt-BR | en / es / pt-BR, [summaries left in each article's own language](#two-languages-in-one-book) without bleeding across a batch |
+| **Feeds** | Brazilian sources | Spanish-language and anglophone sources; cross-feed duplicates dropped |
+
+Everything above is covered by the test suite, which the deploy script runs **on the target host** before it will restart anything.
 
 ## Features
 
@@ -34,10 +53,16 @@ BiteSIze runs on one machine. It fetches the feeds you pick, pulls full article 
 - **Paywall mirrors** when the first fetch is thin (archive.org is the one that sometimes helps).
 - **Personal relevance** — describe your interests in prose and stories are scored on fit to you, with a keep threshold and a per-issue cap.
 - **en / es / pt-BR**, with summaries optionally left in each article's own language.
+- **Pick before you pay** — a pool of screened headlines you swipe through; only what you keep gets fetched and summarized.
+- **Reachable from a tablet** — password auth and a Tailscale tunnel, with the app still bound to loopback.
+- **Runs on a Pi** — systemd units, a persistent 06:50 timer, and a deploy that tests on the Pi and rolls back on failure.
 
 ## Getting started
 
-You need [Python 3.13+](https://www.python.org/downloads/) and a terminal. macOS is assumed for iCloud Books and the daily LaunchAgent.
+You need [Python 3.11+](https://www.python.org/downloads/) and a terminal. It runs on macOS and on Linux; only iCloud Books delivery and the LaunchAgents are macOS-only, and each has a Linux counterpart below.
+
+> [!TIP]
+> For daily use, put this on a machine that is always awake. A laptop cannot run a 06:50 job while it is asleep, and the dashboard is only reachable while it is up — see [Running on a Raspberry Pi](#running-on-a-raspberry-pi-linux). On a laptop, both are best-effort.
 
 ```bash
 ./run.sh dashboard           # sets up .venv on first run → http://127.0.0.1:8765
@@ -208,16 +233,22 @@ The dashboard binds to `127.0.0.1` and should stay there. To pick from an iPad, 
 
 Without one, the dashboard trusts its loopback bind — `GET` routes are open and only writes need a token. A tunnel breaks that assumption, because it forwards from the tailnet to `127.0.0.1`, so every request arrives looking local. With a password set, **every** `/api/` route needs a session or the bearer token, reads included; static files stay open so the login page can load.
 
-**2. Expose it through Tailscale.** Install Tailscale on the Mac and the iPad and sign both into the same tailnet, then:
+**2. Expose it through Tailscale.** Install Tailscale on the host and the iPad and sign both into the same tailnet, then:
 
 ```bash
-tailscale serve --bg 8765
-tailscale serve status        # prints the https://<machine>.<tailnet>.ts.net URL
+tailscale serve --bg 8765     # publishes on https://<machine>.<tailnet>.ts.net (port 443)
+tailscale serve status        # prints the URL it chose
 ```
 
-Tailscale terminates TLS and forwards to `127.0.0.1:8765`, so the app keeps its loopback bind and you get HTTPS without certificates. Open that URL on the iPad and log in. Once you only ever reach it that way, turn on `dashboard_cookie_secure` so the session cookie refuses plain HTTP.
+Tailscale terminates TLS and forwards to `127.0.0.1:8765`, so the app keeps its loopback bind and you get HTTPS without managing certificates. Open that URL on the iPad and log in. Once you only ever reach it that way, turn on `dashboard_cookie_secure` so the session cookie refuses plain HTTP.
 
-Plain `ssh -L 8765:localhost:8765 you@mac` works too, and needs no new software, but the tunnel has to be re-established and iOS SSH clients make that tedious.
+`serve` cannot share a port, so if something else on the host already holds 443 — Pi-hole's admin page is the usual one — give BiteSIze a high port instead, and expect the URL to carry it:
+
+```bash
+tailscale serve --bg --https=8444 8765    # https://<machine>.<tailnet>.ts.net:8444
+```
+
+Plain `ssh -L 8765:localhost:8765 you@host` works too, and needs no new software, but the tunnel has to be re-established and iOS SSH clients make that tedious.
 
 **If `tailscale serve` is unavailable**, `dashboard_host` can bind the dashboard straight to the tailnet address instead:
 
@@ -227,7 +258,7 @@ Plain `ssh -L 8765:localhost:8765 you@mac` works too, and needs no new software,
 | `tailscale` | this machine's `100.x` tailnet address, auto-detected |
 | an IP, or `0.0.0.0` | exactly that |
 
-Tailscale encrypts node-to-node traffic with WireGuard, so a tailnet bind is private without TLS. Two things to know before using it: **a non-loopback bind is refused outright unless a password is set** — the bind was the only thing keeping reads private, so the dashboard stays on loopback and says so rather than exposing them — and **you cannot reach your own tailnet address from the same Mac**, because Tailscale's network extension does not hairpin traffic back to itself. Binding to `tailscale` therefore makes the dashboard reachable from your other devices but *not* from the Mac running it. `tailscale serve` avoids that trade-off, which is why it is the first recommendation.
+Tailscale encrypts node-to-node traffic with WireGuard, so a tailnet bind is private without TLS. Two things to know before using it: **a non-loopback bind is refused outright unless a password is set** — the bind was the only thing keeping reads private, so the dashboard stays on loopback and says so rather than exposing them — and **you cannot reach your own tailnet address from the host itself**, because Tailscale does not hairpin traffic back to the machine it came from. Binding to `tailscale` therefore makes the dashboard reachable from your other devices but *not* from the machine running it — which also means a local `curl` is no way to test it. `tailscale serve` avoids that trade-off, which is why it is the first recommendation.
 
 > [!WARNING]
 > Do not reach for `HOST = "0.0.0.0"`. There is no TLS in the application, one account, and no rate limiting beyond the login throttle. The tunnel is what makes this safe.
@@ -347,6 +378,9 @@ Off by default. Put a TypeSafe key or a Vercel AI Gateway `vck_…` key in `.env
 
 ## Daily run (macOS)
 
+> [!NOTE]
+> On Linux, [`install-linux-systemd.sh`](#running-on-a-raspberry-pi-linux) installs the equivalents of this section and the next one, and has no sleep caveats.
+
 ```bash
 ./scripts/install-daily-launchd.sh
 ```
@@ -412,9 +446,11 @@ To ship later changes from the Mac: `scripts/deploy-to-pi.sh`. It sends the code
 | `data/bitesize.db` | Runtime settings and RSS sources |
 | `.env` / `sources.json` | Seed only, first migrate |
 | `data/dashboard.token` | Write-API Bearer token if env is unset |
+| `data/dashboard_auth.json` | scrypt password hash, mode `0600` |
+| `data/dashboard_secret` | Session cookie key, mode `0600` |
 | `credentials.json` | Google OAuth client (Gmail / Calendar) |
 
-Dashboard: `python dashboard.py` → http://127.0.0.1:8765
+Dashboard: `./run.sh dashboard` → http://127.0.0.1:8765 locally, or the `https://…ts.net` URL from [Reaching the dashboard from a tablet](#reaching-the-dashboard-from-a-tablet).
 
 | Tab | What it is for |
 | --- | --- |
@@ -433,7 +469,11 @@ Dashboard: `python dashboard.py` → http://127.0.0.1:8765
 
 **Kindle never arrives.** Confirm App Password, approved sender, and `kindle_delivery_enabled`. The EPUB is already in `output/` either way.
 
-**Books copy failed.** Delivery is best-effort. Check `icloud_books_dir` or skip with `--no-books`.
+**Books copy failed.** Delivery is best-effort. Check `icloud_books_dir` or skip with `--no-books`. On Linux it is off by design; use **Download EPUB**.
+
+**The morning run happened hours late.** The host was asleep at 06:50. launchd cannot run on a sleeping Mac and starts the missed job at the next wake, so the pool appears whenever you open the lid. `caffeinate` only helps once the job has started; waking the machine needs `sudo pmset repeat wakeorpoweron MTWRFSU 06:45:00`, and even then a scheduled wake on battery may come up dark or fall back to sleep before 06:50. An always-on Linux host removes the problem.
+
+**Logged in and the form will not go away.** Hard-reload the page. `[hidden] { display: none !important; }` in `dashboard_static/style.css` is what makes the login overlay hide at all — an author `display` rule outranks the browser's own `[hidden]` rule, so dropping it brings back an invisible overlay that eats every click.
 
 Tests:
 
