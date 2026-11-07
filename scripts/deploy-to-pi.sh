@@ -64,7 +64,30 @@ done
 echo "  $(wc -l < "${LIST}" | tr -d ' ') files"
 
 # One-time: let this user restart this one unit without a password.
+GRANT="\$(id -un) ALL=(root) NOPASSWD: /usr/bin/systemctl restart ${SERVICE}"
 if ! "${SSH[@]}" "sudo -n -l /usr/bin/systemctl restart ${SERVICE} >/dev/null 2>&1"; then
+  # sudo needs a terminal to read a password, and an agent, a hook or a CI job
+  # has none. Say so, and hand over the exact command, instead of letting sudo
+  # fail with "a terminal is required" after the file list has already printed.
+  if [[ ! -t 0 ]]; then
+    cat >&2 <<EOT
+
+One-time setup is needed and it asks for your password on the Pi, so it
+cannot run without a terminal. Paste this into a terminal window once:
+
+  ssh -t ${HOST} 'set -e
+    tmp=\$(mktemp)
+    echo "${GRANT}" > "\$tmp"
+    sudo visudo -cf "\$tmp" >/dev/null
+    sudo install -m 0440 "\$tmp" /etc/sudoers.d/deploy-${SERVICE}
+    rm -f "\$tmp"; echo granted'
+
+It grants exactly one thing: restarting ${SERVICE}, with no password.
+visudo validates the file before it is installed, so a typo cannot lock
+you out of sudo. Then run this deploy again. Nothing has changed yet.
+EOT
+    exit 1
+  fi
   say "One-time setup: allow restarting ${SERVICE} without a password (asks for your Pi password)"
   ssh -t "${HOST}" "set -e
     tmp=\$(mktemp)
@@ -91,7 +114,8 @@ rollback() {
   if "${SSH[@]}" "set -e
       rsync -a --delete ${RSYNC_KEEP} ~/.deploy/${APP}-previous/ ~/${APP}/
       sudo -n /usr/bin/systemctl restart ${SERVICE}
-      for i in \$(seq 1 15); do curl -fsS -o /dev/null ${HEALTH} && exit 0; sleep 1; done; exit 1"; then
+      for i in \$(seq 1 15); do curl -fs -o /dev/null ${HEALTH} && exit 0; sleep 1; done
+      curl -fsS -o /dev/null ${HEALTH} && exit 0; exit 1"; then
     echo "  the previous version is running again; nothing changed for your phone"
   else
     echo "  rollback needs a hand: ssh ${HOST}, then: systemctl status ${SERVICE}" >&2
@@ -109,7 +133,8 @@ fi
 # ── 5. Restart and check ────────────────────────────────────────────────────
 say "4/4  Restarting ${SERVICE}"
 if ! "${SSH[@]}" "sudo -n /usr/bin/systemctl restart ${SERVICE}
-    for i in \$(seq 1 15); do curl -fsS -o /dev/null ${HEALTH} && exit 0; sleep 1; done; exit 1"; then
+    for i in \$(seq 1 15); do curl -fs -o /dev/null ${HEALTH} && exit 0; sleep 1; done
+    curl -fsS -o /dev/null ${HEALTH} && exit 0; exit 1"; then
   echo "  ${SERVICE} didn't come back healthy. Last log lines:" >&2
   "${SSH[@]}" "cd ~/${APP} && ${LOG_CMD}" 2>/dev/null | sed 's/^/  /' || true
   rollback
